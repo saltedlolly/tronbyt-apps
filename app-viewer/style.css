@@ -221,6 +221,121 @@ body.dot-matrix-enabled #app-content .app-2x img {
   background: #e0a800;
 }
 
+.btn-success {
+  background: #008f45;
+  border: none;
+  color: #fff;
+  font-family: 'Press Start 2P', monospace;
+}
+
+.btn-success:hover {
+  background: #00a950;
+}
+
+.viewer-header {
+  gap: 1rem;
+}
+
+.server-settings-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.65rem;
+  white-space: nowrap;
+}
+
+.connection-icon {
+  background: currentColor;
+  box-shadow:
+    3px 0 currentColor,
+    6px 0 currentColor,
+    9px 0 currentColor,
+    12px 0 currentColor,
+    15px 0 currentColor,
+    9px -6px currentColor,
+    12px -3px currentColor,
+    12px 3px currentColor,
+    9px 6px currentColor;
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 3px;
+  margin: 6px 15px 6px 0;
+  width: 3px;
+}
+
+.server-settings-button.connected {
+  border-color: #00a950;
+  color: #8ff0b5;
+}
+
+.server-settings-button.connected .connection-icon {
+  box-shadow:
+    3px 3px currentColor,
+    6px 6px currentColor,
+    9px 3px currentColor,
+    12px 0 currentColor,
+    15px -3px currentColor,
+    18px -6px currentColor;
+  margin-right: 18px;
+}
+
+.tronbyt-install-action[hidden] {
+  display: none !important;
+}
+
+.modal-content {
+  background: #222;
+  border: 2px solid #444;
+  color: #e0e0e0;
+}
+
+.modal-header,
+.modal-footer {
+  border-color: #444;
+}
+
+.modal .btn-close {
+  filter: invert(1);
+}
+
+.server-help {
+  color: #aaa;
+  font-size: 0.65rem;
+  line-height: 1.6;
+}
+
+#tronbyt-server-error {
+  min-height: 1.2rem;
+  font-size: 0.65rem;
+  line-height: 1.5;
+}
+
+.connection-status-pending {
+  color: #ffd761;
+}
+
+.connection-status-error {
+  color: #ff6b6b;
+}
+
+.connection-status-success {
+  color: #8ff0b5;
+}
+
+@media (max-width: 767px) {
+  #tronbyt-settings-label {
+    display: none;
+  }
+
+  .detail-actions {
+    width: 100%;
+    margin-top: 1rem;
+  }
+
+  .detail-actions .btn {
+    width: 100%;
+  }
+}
+
 .legend {
   border: 2px solid #444;
 }

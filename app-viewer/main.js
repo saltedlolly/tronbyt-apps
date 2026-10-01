@@ -1,3 +1,10 @@
+import {
+  TRONBYT_SERVER_STORAGE_KEY,
+  buildCommunityInstallUrl,
+  buildServerVerificationUrl,
+  normalizeServerUrl
+} from './server-url.js';
+
 // --- CONFIG ---
 // Use GitHub Pages structure for both local and production
 const isDetailsPage = window.location.pathname.includes('/details/');
@@ -8,6 +15,188 @@ const APPS_DIR = isNestedPage ? '../apps' : 'apps';
 const BROKEN_APPS_FILE = isNestedPage ? '../broken_apps.txt' : 'broken_apps.txt';
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 const MD_FILES = ['README.md', 'readme.md', 'index.md'];
+const DEFAULT_SORT_ORDER = 'updated';
+let verificationPopup = null;
+
+function getSavedTronbytServer() {
+  try {
+    return localStorage.getItem(TRONBYT_SERVER_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setSavedTronbytServer(serverUrl) {
+  localStorage.setItem(TRONBYT_SERVER_STORAGE_KEY, serverUrl);
+}
+
+function clearSavedTronbytServer() {
+  localStorage.removeItem(TRONBYT_SERVER_STORAGE_KEY);
+}
+
+function openTronbytInstall(app) {
+  const serverUrl = getSavedTronbytServer();
+  if (!serverUrl) {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('tronbyt-server-modal')).show();
+    return;
+  }
+
+  window.open(buildCommunityInstallUrl(serverUrl, app.name), '_blank', 'noopener');
+}
+
+function createAddToTronbytButton(app, isBroken) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn-success add-to-tronbyt-button tronbyt-install-action';
+  button.textContent = '➕ Add to Tronbyt';
+  button.hidden = !getSavedTronbytServer();
+  button.disabled = isBroken;
+  if (isBroken) {
+    button.title = 'This app is currently marked as broken';
+  } else {
+    button.addEventListener('click', () => openTronbytInstall(app));
+  }
+  return button;
+}
+
+function createVerificationNonce() {
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function verifyTronbytServer(serverUrl) {
+  const nonce = createVerificationNonce();
+  const verificationUrl = buildServerVerificationUrl(serverUrl, window.location.origin, nonce);
+  const expectedOrigin = new URL(serverUrl).origin;
+  if (verificationPopup && !verificationPopup.closed && verificationPopup !== window) {
+    verificationPopup.close();
+  }
+
+  const popup = window.open(
+    verificationUrl,
+    `tronbyt-server-verification-${nonce}`,
+    'popup,width=560,height=700'
+  );
+  verificationPopup = popup;
+
+  if (!popup) {
+    verificationPopup = null;
+    return Promise.reject(new Error('Allow pop-ups for this page, then try connecting again.'));
+  }
+
+  popup.focus();
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    function finish(error, closePopup = true) {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener('message', handleMessage);
+      window.clearTimeout(timeout);
+      window.clearInterval(closedCheck);
+      if (closePopup) {
+        if (!popup.closed) popup.close();
+        if (verificationPopup === popup) verificationPopup = null;
+      }
+      if (error) reject(error);
+      else resolve();
+    }
+
+    function handleMessage(event) {
+      if (event.origin !== expectedOrigin ||
+          event.data?.type !== 'tronbyt-server-verified' ||
+          event.data?.nonce !== nonce) {
+        return;
+      }
+      finish();
+    }
+
+    window.addEventListener('message', handleMessage);
+    const timeout = window.setTimeout(() => {
+      finish(new Error('Still not connected. If the opened window shows a login page, sign in there, then return here and click Verify again.'), false);
+    }, 8000);
+    const closedCheck = window.setInterval(() => {
+      if (popup.closed) {
+        finish(new Error('Verification was not completed. Sign in to your Tronbyt Server, then try again.'));
+      }
+    }, 300);
+  });
+}
+
+function setupTronbytServerSettings() {
+  const modalElement = document.getElementById('tronbyt-server-modal');
+  const form = document.getElementById('tronbyt-server-form');
+  if (!modalElement || !form) return;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+  const input = document.getElementById('tronbyt-server-url');
+  const error = document.getElementById('tronbyt-server-error');
+  const clearButton = document.getElementById('clear-tronbyt-server');
+  const openButton = document.getElementById('open-tronbyt-server');
+  const settingsLabel = document.getElementById('tronbyt-settings-label');
+  const saveButton = form.querySelector('button[type="submit"]');
+  const settingsButton = document.querySelector('.server-settings-button');
+
+  function refreshInstallActions() {
+    const connected = Boolean(getSavedTronbytServer());
+    document.querySelectorAll('.tronbyt-install-action').forEach(button => {
+      button.hidden = !connected;
+    });
+  }
+
+  function refreshSettings() {
+    const saved = getSavedTronbytServer();
+    input.value = saved || '';
+    openButton.hidden = !saved;
+    if (saved) {
+      openButton.href = saved;
+      settingsLabel.textContent = `Connected: ${new URL(saved).host}`;
+      settingsButton?.classList.add('connected');
+    } else {
+      openButton.removeAttribute('href');
+      settingsLabel.textContent = 'Connect Tronbyt Server';
+      settingsButton?.classList.remove('connected');
+    }
+    refreshInstallActions();
+  }
+
+  modalElement.addEventListener('show.bs.modal', () => {
+    error.textContent = '';
+    error.className = '';
+    refreshSettings();
+  });
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    try {
+      const normalized = normalizeServerUrl(input.value);
+      error.className = 'connection-status-pending';
+      error.textContent = 'Waiting for Tronbyt Server… If a sign-in window opens, complete sign-in there.';
+      saveButton.disabled = true;
+      await verifyTronbytServer(normalized);
+      setSavedTronbytServer(normalized);
+      refreshSettings();
+      error.className = 'connection-status-success';
+      error.textContent = `Connected to Tronbyt Server at ${new URL(normalized).host}.`;
+      modal.hide();
+    } catch (validationError) {
+      error.className = 'connection-status-error';
+      error.textContent = validationError.message;
+    } finally {
+      saveButton.disabled = false;
+    }
+  });
+
+  clearButton.addEventListener('click', () => {
+    clearSavedTronbytServer();
+    error.textContent = '';
+    error.className = '';
+    refreshSettings();
+  });
+
+  refreshSettings();
+}
 
 // --- CACHE MANAGEMENT ---
 // Simple in-memory cache to avoid redundant network requests
@@ -207,13 +396,18 @@ function renderAppsList(apps, brokenApps = []) {
       cardBody.appendChild(description);
     }
 
+    const actions = document.createElement('div');
+    actions.className = 'card-actions mt-auto d-grid gap-2';
+
     // Create button - all apps should have details from manifest
     const button = document.createElement('a');
     button.href = detailUrl;
-    button.className = 'btn btn-primary mt-auto';
+    button.className = 'btn btn-primary';
     button.textContent = '📄 View Details';
 
-    cardBody.appendChild(button);
+    actions.appendChild(button);
+    actions.appendChild(createAddToTronbytButton(app, isBroken));
+    cardBody.appendChild(actions);
 
     // Assemble the card
     cardDiv.appendChild(imageContainer);
@@ -296,7 +490,7 @@ function setupSearch(apps, brokenApps) {
     renderAppsList(filtered, brokenApps);
 
     // Show/hide clear button based on any filters being active
-    const hasFilters = searchVal || categoryVal || tagVal || sortVal !== 'alphabetical';
+    const hasFilters = searchVal || categoryVal || tagVal || sortVal !== DEFAULT_SORT_ORDER;
     clearButton.style.display = hasFilters ? 'block' : 'none';
   }
 
@@ -313,14 +507,12 @@ function setupSearch(apps, brokenApps) {
     search.value = '';
     categoryFilter.value = '';
     tagFilter.value = '';
-    sortOrder.value = 'alphabetical';
-    renderAppsList(apps.sort((a, b) => (a.displayName || a.name).toLowerCase().localeCompare((b.displayName || b.name).toLowerCase())), brokenApps);
-    clearButton.style.display = 'none';
+    sortOrder.value = DEFAULT_SORT_ORDER;
+    filterApps();
     search.focus();
   });
 
-  // Initially hide clear button
-  clearButton.style.display = 'none';
+  filterApps();
 }
 
 // --- APP DETAIL PAGE LOGIC ---
@@ -554,13 +746,17 @@ async function renderAppDetail() {
 
   // Add buttons at the bottom - Back to Apps on left, Report Broken on right
   const reportContainer = document.createElement('div');
-  reportContainer.className = 'mt-4 pt-4 border-top d-flex justify-content-between';
+  reportContainer.className = 'mt-4 pt-4 border-top d-flex justify-content-between flex-wrap gap-2';
 
   // Back to Apps button (left side)
   const backButton = document.createElement('a');
   backButton.href = isDetailsPage ? '../index.html' : 'index.html';
   backButton.className = 'btn btn-secondary';
   backButton.textContent = '← Back to Apps';
+
+  const rightActions = document.createElement('div');
+  rightActions.className = 'detail-actions d-flex gap-2 flex-wrap justify-content-end';
+  rightActions.appendChild(createAddToTronbytButton(app, isBroken));
 
   // Report Broken button (right side)
   const reportButton = document.createElement('a');
@@ -572,7 +768,8 @@ async function renderAppDetail() {
   reportButton.textContent = isBroken ? '⚠️ Already Reported' : '🐛 Report Broken';
 
   reportContainer.appendChild(backButton);
-  reportContainer.appendChild(reportButton);
+  rightActions.appendChild(reportButton);
+  reportContainer.appendChild(rightActions);
   container.appendChild(reportContainer);
 
   // Initialize tooltips for the app detail page
@@ -648,6 +845,7 @@ async function renderAuthorProfile() {
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
+  setupTronbytServerSettings();
   if (document.getElementById('author-content')) {
     // Author profile page
     await renderAuthorProfile();
@@ -655,7 +853,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else if (document.getElementById('apps-list')) {
     // Index page - preload all data simultaneously
     const { apps, brokenApps } = await preloadAppData();
-    renderAppsList(apps, brokenApps);
     setupSearch(apps, brokenApps);
     setupDotMatrixToggle();
   } else if (document.getElementById('app-content')) {
