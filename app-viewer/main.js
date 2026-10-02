@@ -172,6 +172,22 @@ function setupTronbytServerSettings() {
   const cancelButton = document.getElementById('cancel-tronbyt-connection');
   let troubleshootingTimer = null;
 
+  const requiredElements = [
+    input,
+    error,
+    clearButton,
+    openButton,
+    settingsLabel,
+    continueLink,
+    troubleshooting,
+    retryButton,
+    cancelButton
+  ];
+  if (requiredElements.some(element => !element)) {
+    console.warn('Tronbyt Server settings are unavailable because the page markup is incomplete.');
+    return;
+  }
+
   function resetConnectionProgress() {
     if (troubleshootingTimer) window.clearTimeout(troubleshootingTimer);
     troubleshootingTimer = null;

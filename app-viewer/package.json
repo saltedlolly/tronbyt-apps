@@ -6,7 +6,7 @@
   "main": "generate-apps-json.js",
   "scripts": {
     "build": "node generate-apps-json.js",
-    "serve": "cd .. && http-server . -p 8888 --no-dotfiles -d false",
+    "serve": "npm run build && cd .. && http-server . -p 8888 --no-dotfiles -d false -c-1",
     "test": "node --test"
   },
   "keywords": [
