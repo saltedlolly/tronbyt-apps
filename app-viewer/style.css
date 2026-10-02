@@ -7,8 +7,18 @@ body {
 }
 
 .main-title {
+  align-items: center;
   color: #ffd700;
+  display: flex;
+  gap: 0.65rem;
   text-shadow: 2px 2px 0 #000;
+  white-space: nowrap;
+}
+
+.main-title img {
+  flex: 0 0 auto;
+  height: 48px;
+  width: 48px;
 }
 
 .card {
@@ -240,10 +250,19 @@ body.dot-matrix-enabled #app-content .app-2x img {
   align-items: center;
   display: inline-flex;
   gap: 0.65rem;
+  justify-content: center;
   white-space: nowrap;
 }
 
 .connection-icon {
+  display: inline-block;
+  flex: 0 0 21px;
+  height: 15px;
+  position: relative;
+  width: 21px;
+}
+
+.connection-icon::before {
   background: currentColor;
   box-shadow:
     3px 0 currentColor,
@@ -255,10 +274,11 @@ body.dot-matrix-enabled #app-content .app-2x img {
     12px -3px currentColor,
     12px 3px currentColor,
     9px 6px currentColor;
-  display: inline-block;
-  flex: 0 0 auto;
+  content: '';
   height: 3px;
-  margin: 6px 15px 6px 0;
+  left: 0;
+  position: absolute;
+  top: 6px;
   width: 3px;
 }
 
@@ -267,7 +287,7 @@ body.dot-matrix-enabled #app-content .app-2x img {
   color: #8ff0b5;
 }
 
-.server-settings-button.connected .connection-icon {
+.server-settings-button.connected .connection-icon::before {
   box-shadow:
     3px 3px currentColor,
     6px 6px currentColor,
@@ -275,7 +295,30 @@ body.dot-matrix-enabled #app-content .app-2x img {
     12px 0 currentColor,
     15px -3px currentColor,
     18px -6px currentColor;
-  margin-right: 18px;
+}
+
+.card-actions .btn,
+.detail-actions .btn {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.65rem;
+  justify-content: center;
+}
+
+.button-icon {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  line-height: 1;
+  position: relative;
+  top: -1px;
+}
+
+.server-intro {
+  color: #e0e0e0;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  margin-bottom: 1.25rem;
 }
 
 .tronbyt-install-action[hidden] {
@@ -322,6 +365,28 @@ body.dot-matrix-enabled #app-content .app-2x img {
 }
 
 @media (max-width: 767px) {
+  .viewer-header {
+    gap: 0.75rem;
+  }
+
+  .main-title {
+    font-size: 1.35rem;
+    line-height: 1.35;
+    min-width: 0;
+  }
+
+  .main-title img {
+    height: 40px;
+    width: 40px;
+  }
+
+  .server-settings-button {
+    flex: 0 0 3.25rem;
+    height: 3.25rem;
+    padding: 0;
+    width: 3.25rem;
+  }
+
   #tronbyt-settings-label {
     display: none;
   }

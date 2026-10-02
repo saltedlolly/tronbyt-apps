@@ -58,11 +58,22 @@ function openTronbytInstall(app) {
   window.open(buildCommunityInstallUrl(serverUrl, app.name), '_blank', 'noopener');
 }
 
+function setButtonContent(button, icon, label) {
+  const iconElement = document.createElement('span');
+  iconElement.className = 'button-icon';
+  iconElement.setAttribute('aria-hidden', 'true');
+  iconElement.textContent = icon;
+
+  const labelElement = document.createElement('span');
+  labelElement.textContent = label;
+  button.replaceChildren(iconElement, labelElement);
+}
+
 function createAddToTronbytButton(app, isBroken) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'btn btn-success add-to-tronbyt-button tronbyt-install-action';
-  button.textContent = '➕ Add to Tronbyt';
+  setButtonContent(button, '+', 'Add to Tronbyt');
   button.hidden = !getSavedTronbytServer();
   button.disabled = isBroken;
   if (isBroken) {
@@ -150,11 +161,16 @@ function setupTronbytServerSettings() {
     openButton.hidden = !saved;
     if (saved) {
       openButton.href = saved;
-      settingsLabel.textContent = `Connected: ${new URL(saved).host}`;
+      const serverHost = new URL(saved).host;
+      settingsLabel.textContent = serverHost;
+      settingsButton?.setAttribute('aria-label', `Verified Tronbyt Server: ${serverHost}`);
+      settingsButton?.setAttribute('title', `Verified Tronbyt Server: ${serverHost}`);
       settingsButton?.classList.add('connected');
     } else {
       openButton.removeAttribute('href');
-      settingsLabel.textContent = 'Connect Tronbyt Server';
+      settingsLabel.textContent = 'Add Tronbyt Server';
+      settingsButton?.setAttribute('aria-label', 'Add Tronbyt Server');
+      settingsButton?.setAttribute('title', 'Add Tronbyt Server');
       settingsButton?.classList.remove('connected');
     }
     refreshInstallActions();
@@ -405,7 +421,7 @@ function renderAppsList(apps, brokenApps = []) {
     const button = document.createElement('a');
     button.href = detailUrl;
     button.className = 'btn btn-primary';
-    button.textContent = '📄 View Details';
+    setButtonContent(button, '📄', 'View Details');
 
     actions.appendChild(button);
     actions.appendChild(createAddToTronbytButton(app, isBroken));

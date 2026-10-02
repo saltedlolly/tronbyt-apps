@@ -13,15 +13,14 @@
     <body>
         <div class="container py-4">
             <div class="viewer-header d-flex justify-content-between align-items-center mb-4">
-                <h1 class="main-title mb-0"><img src="https://avatars.githubusercontent.com/u/200508996?s=48&v=4"> Apps
-                    Viewer</h1>
+                <h1 class="main-title mb-0"><img src="https://avatars.githubusercontent.com/u/200508996?s=48&v=4" alt=""> <span>Apps Viewer</span></h1>
                 <button type="button"
                         class="btn btn-secondary server-settings-button"
                         data-bs-toggle="modal"
                         data-bs-target="#tronbyt-server-modal"
                         title="Tronbyt Server settings">
                     <span class="connection-icon" aria-hidden="true"></span>
-                    <span id="tronbyt-settings-label">Connect Tronbyt Server</span>
+                    <span id="tronbyt-settings-label">Add Tronbyt Server</span>
                 </button>
             </div>
 
@@ -71,6 +70,7 @@
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
+                            <p class="server-intro">Install apps from the App Viewer directly to your Tronbyt devices.</p>
                             <label for="tronbyt-server-url" class="form-label">Server address</label>
                             <input type="text"
                                    inputmode="url"
