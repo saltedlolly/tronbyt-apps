@@ -63,8 +63,8 @@ version string.
   show the install buttons, but installation fails safely in the server tab.
   Re-verifying exposes the compatibility guidance.
 - Before making the App Viewer PR ready for review, replace the temporary
-  “recent version” wording with the exact first released Tronbyt Server version
-  that supports protocol `1`.
+  `v2.x.x` wording with the exact first released Tronbyt Server version that
+  supports protocol `1`.
 
 ## Callback integrity and concurrency
 
