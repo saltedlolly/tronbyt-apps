@@ -527,9 +527,23 @@ body.dot-matrix-enabled #app-content .app-preview-image-square {
 }
 
 #tronbyt-server-error {
-  min-height: 1.2rem;
   font-size: 0.65rem;
   line-height: 1.5;
+  margin-top: 1rem;
+}
+
+#tronbyt-server-error:empty {
+  display: none;
+}
+
+.connection-primary-actions {
+  align-items: center;
+  border-top: 1px solid #444;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
 }
 
 .connection-status-pending {

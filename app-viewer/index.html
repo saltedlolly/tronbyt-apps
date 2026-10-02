@@ -79,6 +79,13 @@
                                    id="tronbyt-server-url"
                                    autocomplete="url">
                             <p class="server-help mt-3 mb-2">Enter your Tronbyt Server address above and select Verify. Your server will open in a new tab so you can sign in if needed, then return you to the App Viewer. Local addresses will only work while you’re on the same network.</p>
+                            <div class="connection-primary-actions">
+                                <div>
+                                    <button type="button" class="btn btn-secondary" id="clear-tronbyt-server">Clear</button>
+                                    <a class="btn btn-secondary" id="open-tronbyt-server" target="_blank" rel="noopener" hidden>Open Server</a>
+                                </div>
+                                <button type="submit" class="btn btn-success">Verify</button>
+                            </div>
                             <div id="tronbyt-server-error" role="alert" aria-live="polite"></div>
                             <a id="continue-tronbyt-connection" class="btn btn-secondary btn-sm mt-3" target="_blank" rel="noopener" hidden>Continue to Tronbyt Server</a>
                             <div id="connection-troubleshooting" class="connection-troubleshooting mt-3" hidden>
@@ -89,13 +96,6 @@
                                     <button type="button" class="btn btn-secondary btn-sm" id="cancel-tronbyt-connection">Cancel</button>
                                 </div>
                             </div>
-                        </div>
-                        <div class="modal-footer justify-content-between">
-                            <div>
-                                <button type="button" class="btn btn-secondary" id="clear-tronbyt-server">Clear</button>
-                                <a class="btn btn-secondary" id="open-tronbyt-server" target="_blank" rel="noopener" hidden>Open Server</a>
-                            </div>
-                            <button type="submit" class="btn btn-success">Verify</button>
                         </div>
                     </form>
                 </div>
