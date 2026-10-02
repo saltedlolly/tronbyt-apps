@@ -18,12 +18,19 @@ test('normalizes Tronbyt server addresses', () => {
   assert.equal(normalizeServerUrl('https://umbrel.local:19191/'), 'https://umbrel.local:19191');
   assert.equal(normalizeServerUrl('umbrel.local:19191'), 'https://umbrel.local:19191');
   assert.equal(normalizeServerUrl('http://192.168.1.20:8000'), 'http://192.168.1.20:8000');
+  assert.equal(
+    normalizeServerUrl('http://192.168.1.20:19192/auth/login'),
+    'http://192.168.1.20:19192'
+  );
+  assert.equal(
+    normalizeServerUrl('https://umbrel.local:19191/devices/example?tab=apps#community'),
+    'https://umbrel.local:19191'
+  );
 });
 
-test('rejects unsafe or non-base addresses', () => {
+test('rejects unsafe addresses', () => {
   assert.throws(() => normalizeServerUrl('javascript:alert(1)'), /valid server address|http:\/\/ or https:\/\//);
   assert.throws(() => normalizeServerUrl('https://user:password@example.test'), /without credentials/);
-  assert.throws(() => normalizeServerUrl('https://example.test/devices'), /without a page path/);
 });
 
 test('builds an encoded community install URL', () => {

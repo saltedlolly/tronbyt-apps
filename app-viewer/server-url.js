@@ -31,10 +31,8 @@ export function normalizeServerUrl(value) {
   if (url.username || url.password) {
     throw new Error('Enter a server address without credentials.');
   }
-  if ((url.pathname && url.pathname !== '/') || url.search || url.hash) {
-    throw new Error('Enter the server address only, without a page path.');
-  }
-
+  // Only the origin identifies a Tronbyt Server. This also lets someone paste
+  // a page they already have open, such as /auth/login, without correcting it.
   return url.origin;
 }
 

@@ -15,7 +15,8 @@ version string.
 - HTTP and HTTPS base origins: accept.
 - Address containing credentials: reject.
 - Non-HTTP scheme: reject.
-- Address containing a path, query, or fragment: reject.
+- Address containing a path, query, or fragment: discard everything after the
+  origin and verify the resulting server address.
 - Local address while off the relevant LAN: only the new tab fails; the viewer
   remains available and the address is not saved.
 

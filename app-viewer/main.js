@@ -259,6 +259,7 @@ function setupTronbytServerSettings() {
     event.preventDefault();
     try {
       const normalized = normalizeServerUrl(input.value);
+      input.value = normalized;
       const connectionUrl = beginTronbytConnection(normalized);
       const pending = getPendingConnection();
       showPendingConnection(pending);
