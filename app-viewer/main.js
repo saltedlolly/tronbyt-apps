@@ -1,8 +1,14 @@
 import {
+  APP_VIEWER_PROTOCOL,
+  CONNECTION_MAX_AGE_MS,
   TRONBYT_SERVER_STORAGE_KEY,
   buildCommunityInstallUrl,
   buildServerConnectionUrl,
-  normalizeServerUrl
+  connectionHelpDelay,
+  normalizeServerUrl,
+  parseStoredConnection,
+  serializeStoredConnection,
+  validateConnectionCallback
 } from './server-url.js';
 
 // --- CONFIG ---
@@ -17,18 +23,31 @@ const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 const MD_FILES = ['README.md', 'readme.md', 'index.md'];
 const DEFAULT_SORT_ORDER = 'updated';
 const PENDING_CONNECTION_STORAGE_KEY = 'tronbyt.apps.pendingConnection';
-const CONNECTION_MAX_AGE_MS = 10 * 60 * 1000;
 
-function getSavedTronbytServer() {
+function getSavedTronbytConnection() {
   try {
-    return localStorage.getItem(TRONBYT_SERVER_STORAGE_KEY);
+    return parseStoredConnection(localStorage.getItem(TRONBYT_SERVER_STORAGE_KEY));
   } catch {
     return null;
   }
 }
 
-function setSavedTronbytServer(serverUrl) {
-  localStorage.setItem(TRONBYT_SERVER_STORAGE_KEY, serverUrl);
+function getSavedTronbytServer() {
+  const connection = getSavedTronbytConnection();
+  return connection?.protocol === APP_VIEWER_PROTOCOL && connection.verifiedAt
+    ? connection.serverUrl
+    : null;
+}
+
+function getRememberedTronbytServer() {
+  return getSavedTronbytConnection()?.serverUrl || null;
+}
+
+function setSavedTronbytServer(serverUrl, protocol) {
+  localStorage.setItem(
+    TRONBYT_SERVER_STORAGE_KEY,
+    serializeStoredConnection(serverUrl, protocol)
+  );
 }
 
 function clearSavedTronbytServer() {
@@ -95,6 +114,7 @@ function beginTronbytConnection(serverUrl) {
   const pending = {
     state,
     serverUrl,
+    protocol: APP_VIEWER_PROTOCOL,
     returnPath: `${window.location.pathname}${window.location.search}${window.location.hash}`,
     createdAt: Date.now()
   };
@@ -111,18 +131,18 @@ function consumeTronbytConnectionCallback() {
 
   const pending = getPendingConnection();
   const returnedState = params.get('state');
-  const valid = pending &&
-    pending.state === returnedState &&
-    typeof pending.serverUrl === 'string' &&
-    typeof pending.createdAt === 'number' &&
-    Date.now() - pending.createdAt <= CONNECTION_MAX_AGE_MS;
+  const returnedProtocol = params.get('protocol');
+  const validation = validateConnectionCallback(pending, returnedState, returnedProtocol);
 
-  if (!valid) {
-    clearPendingConnection();
+  if (!validation.valid) {
+    if (validation.clearPending) clearPendingConnection();
+    if (validation.reason === 'protocol') {
+      return { error: 'This server does not support the required App Viewer connection protocol. Update Tronbyt Server and try again.' };
+    }
     return { error: 'This connection confirmation is invalid or has expired. Please verify the server again.' };
   }
 
-  setSavedTronbytServer(pending.serverUrl);
+  setSavedTronbytServer(pending.serverUrl, APP_VIEWER_PROTOCOL);
   clearPendingConnection();
 
   const returnUrl = new URL(pending.returnPath || '/', window.location.origin);
@@ -147,6 +167,31 @@ function setupTronbytServerSettings() {
   const settingsLabel = document.getElementById('tronbyt-settings-label');
   const settingsButton = document.querySelector('.server-settings-button');
   const continueLink = document.getElementById('continue-tronbyt-connection');
+  const troubleshooting = document.getElementById('connection-troubleshooting');
+  const retryButton = document.getElementById('retry-tronbyt-connection');
+  const cancelButton = document.getElementById('cancel-tronbyt-connection');
+  let troubleshootingTimer = null;
+
+  function resetConnectionProgress() {
+    if (troubleshootingTimer) window.clearTimeout(troubleshootingTimer);
+    troubleshootingTimer = null;
+    troubleshooting.hidden = true;
+    continueLink.hidden = true;
+  }
+
+  function showPendingConnection(pending) {
+    resetConnectionProgress();
+    const connectionUrl = buildServerConnectionUrl(pending.serverUrl, pending.state, pending.protocol);
+    error.className = 'connection-status-pending';
+    error.textContent = 'Continue in the new tab. Sign in to Tronbyt if asked; it will return you to the App Viewer.';
+    continueLink.href = connectionUrl;
+    continueLink.hidden = false;
+
+    troubleshootingTimer = window.setTimeout(() => {
+      troubleshooting.hidden = false;
+      troubleshootingTimer = null;
+    }, connectionHelpDelay(pending.createdAt));
+  }
 
   function refreshInstallActions() {
     const connected = Boolean(getSavedTronbytServer());
@@ -157,8 +202,9 @@ function setupTronbytServerSettings() {
 
   function refreshSettings() {
     const saved = getSavedTronbytServer();
+    const remembered = getRememberedTronbytServer();
     const pending = getPendingConnection();
-    input.value = saved || pending?.serverUrl || '';
+    input.value = pending?.serverUrl || saved || remembered || '';
     openButton.hidden = !saved;
     if (saved) {
       openButton.href = saved;
@@ -180,8 +226,17 @@ function setupTronbytServerSettings() {
   modalElement.addEventListener('show.bs.modal', () => {
     error.textContent = '';
     error.className = '';
-    continueLink.hidden = true;
+    resetConnectionProgress();
     refreshSettings();
+
+    const pending = getPendingConnection();
+    if (pending && typeof pending.createdAt === 'number' &&
+        Date.now() - pending.createdAt <= CONNECTION_MAX_AGE_MS &&
+        pending.protocol === APP_VIEWER_PROTOCOL) {
+      showPendingConnection(pending);
+    } else if (pending) {
+      clearPendingConnection();
+    }
   });
 
   form.addEventListener('submit', event => {
@@ -189,11 +244,11 @@ function setupTronbytServerSettings() {
     try {
       const normalized = normalizeServerUrl(input.value);
       const connectionUrl = beginTronbytConnection(normalized);
-      error.className = 'connection-status-pending';
-      error.textContent = 'Continue in the new tab. Sign in to Tronbyt if asked; it will return you to the App Viewer.';
+      const pending = getPendingConnection();
+      showPendingConnection(pending);
       continueLink.href = connectionUrl;
-      continueLink.hidden = false;
     } catch (validationError) {
+      resetConnectionProgress();
       error.className = 'connection-status-error';
       error.textContent = validationError.message;
     }
@@ -202,14 +257,27 @@ function setupTronbytServerSettings() {
   clearButton.addEventListener('click', () => {
     clearSavedTronbytServer();
     clearPendingConnection();
+    resetConnectionProgress();
     error.textContent = '';
     error.className = '';
-    continueLink.hidden = true;
+    refreshSettings();
+  });
+
+  retryButton.addEventListener('click', () => {
+    form.requestSubmit();
+  });
+
+  cancelButton.addEventListener('click', () => {
+    clearPendingConnection();
+    resetConnectionProgress();
+    error.textContent = '';
+    error.className = '';
     refreshSettings();
   });
 
   window.addEventListener('storage', event => {
     if (event.key !== TRONBYT_SERVER_STORAGE_KEY || !event.newValue) return;
+    resetConnectionProgress();
     refreshSettings();
     modal.hide();
   });
@@ -871,10 +939,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   setupTronbytServerSettings();
   if (connectionResult?.error) {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('tronbyt-server-modal')).show();
     const error = document.getElementById('tronbyt-server-error');
     error.className = 'connection-status-error';
     error.textContent = connectionResult.error;
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('tronbyt-server-modal')).show();
   }
   if (document.getElementById('author-content')) {
     // Author profile page

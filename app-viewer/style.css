@@ -350,6 +350,13 @@ body.dot-matrix-enabled #app-content .app-2x img {
   line-height: 1.6;
 }
 
+.server-requirement {
+  color: #ffd761;
+  font-size: 0.65rem;
+  line-height: 1.6;
+  margin: -0.5rem 0 1.25rem;
+}
+
 #tronbyt-server-error {
   min-height: 1.2rem;
   font-size: 0.65rem;
@@ -366,6 +373,20 @@ body.dot-matrix-enabled #app-content .app-2x img {
 
 .connection-status-success {
   color: #8ff0b5;
+}
+
+.connection-troubleshooting {
+  border-top: 1px solid #444;
+  color: #aaa;
+  font-size: 0.65rem;
+  line-height: 1.5;
+  padding-top: 1rem;
+}
+
+.connection-troubleshooting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 @media (max-width: 767px) {
