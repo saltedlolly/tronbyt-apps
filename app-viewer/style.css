@@ -314,6 +314,10 @@ body.dot-matrix-enabled #app-content .app-2x img {
   top: -1px;
 }
 
+.button-icon-text {
+  top: 2px;
+}
+
 .server-intro {
   color: #e0e0e0;
   font-size: 0.75rem;

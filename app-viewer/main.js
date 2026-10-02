@@ -61,6 +61,7 @@ function openTronbytInstall(app) {
 function setButtonContent(button, icon, label) {
   const iconElement = document.createElement('span');
   iconElement.className = 'button-icon';
+  if (icon === '+') iconElement.classList.add('button-icon-text');
   iconElement.setAttribute('aria-hidden', 'true');
   iconElement.textContent = icon;
 
