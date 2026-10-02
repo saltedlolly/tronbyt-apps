@@ -56,6 +56,7 @@ jobs:
           cp app-viewer-source/app-viewer/index.html _site/
           cp app-viewer-source/app-viewer/app.html _site/
           cp app-viewer-source/app-viewer/main.js _site/
+          cp app-viewer-source/app-viewer/server-url.js _site/
           cp app-viewer-source/app-viewer/style.css _site/
           cp app-viewer-source/app-viewer/dots.svg _site/
           cp app-viewer-source/app-viewer/dots@2x.svg _site/

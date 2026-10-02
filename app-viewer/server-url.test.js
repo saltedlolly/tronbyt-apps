@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildCommunityInstallUrl,
-  buildServerVerificationUrl,
+  buildServerConnectionUrl,
   normalizeServerUrl
 } from './server-url.js';
 
@@ -26,9 +26,9 @@ test('builds an encoded community install URL', () => {
   );
 });
 
-test('builds a login verification URL for the viewer origin', () => {
+test('builds a server connection URL with one-time state', () => {
   assert.equal(
-    buildServerVerificationUrl('http://umbrel.local:19192', 'http://localhost:8888/app-viewer/', 'test-nonce'),
-    'http://umbrel.local:19192/integrations/apps-viewer/verify?origin=http%3A%2F%2Flocalhost%3A8888&nonce=test-nonce'
+    buildServerConnectionUrl('http://umbrel.local:19192', 'test-state'),
+    'http://umbrel.local:19192/integrations/apps-viewer/connect?state=test-state'
   );
 });

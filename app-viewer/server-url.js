@@ -40,11 +40,9 @@ export function buildCommunityInstallUrl(serverUrl, appSlug) {
   return new URL(`/install/community/${encodeURIComponent(appSlug)}`, baseUrl).href;
 }
 
-export function buildServerVerificationUrl(serverUrl, viewerOrigin, nonce) {
+export function buildServerConnectionUrl(serverUrl, state) {
   const baseUrl = normalizeServerUrl(serverUrl);
-  const origin = new URL(viewerOrigin).origin;
-  const verificationUrl = new URL('/integrations/apps-viewer/verify', baseUrl);
-  verificationUrl.searchParams.set('origin', origin);
-  verificationUrl.searchParams.set('nonce', nonce);
-  return verificationUrl.href;
+  const connectionUrl = new URL('/integrations/apps-viewer/connect', baseUrl);
+  connectionUrl.searchParams.set('state', state);
+  return connectionUrl.href;
 }

@@ -1,7 +1,7 @@
 import {
   TRONBYT_SERVER_STORAGE_KEY,
   buildCommunityInstallUrl,
-  buildServerVerificationUrl,
+  buildServerConnectionUrl,
   normalizeServerUrl
 } from './server-url.js';
 
@@ -16,7 +16,8 @@ const BROKEN_APPS_FILE = isNestedPage ? '../broken_apps.txt' : 'broken_apps.txt'
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 const MD_FILES = ['README.md', 'readme.md', 'index.md'];
 const DEFAULT_SORT_ORDER = 'updated';
-let verificationPopup = null;
+const PENDING_CONNECTION_STORAGE_KEY = 'tronbyt.apps.pendingConnection';
+const CONNECTION_MAX_AGE_MS = 10 * 60 * 1000;
 
 function getSavedTronbytServer() {
   try {
@@ -32,6 +33,19 @@ function setSavedTronbytServer(serverUrl) {
 
 function clearSavedTronbytServer() {
   localStorage.removeItem(TRONBYT_SERVER_STORAGE_KEY);
+}
+
+function getPendingConnection() {
+  try {
+    const value = localStorage.getItem(PENDING_CONNECTION_STORAGE_KEY);
+    return value ? JSON.parse(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingConnection() {
+  localStorage.removeItem(PENDING_CONNECTION_STORAGE_KEY);
 }
 
 function openTronbytInstall(app) {
@@ -59,69 +73,53 @@ function createAddToTronbytButton(app, isBroken) {
   return button;
 }
 
-function createVerificationNonce() {
+function createConnectionState() {
   const bytes = crypto.getRandomValues(new Uint8Array(18));
   return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function verifyTronbytServer(serverUrl) {
-  const nonce = createVerificationNonce();
-  const verificationUrl = buildServerVerificationUrl(serverUrl, window.location.origin, nonce);
-  const expectedOrigin = new URL(serverUrl).origin;
-  if (verificationPopup && !verificationPopup.closed && verificationPopup !== window) {
-    verificationPopup.close();
+function beginTronbytConnection(serverUrl) {
+  const state = createConnectionState();
+  const pending = {
+    state,
+    serverUrl,
+    returnPath: `${window.location.pathname}${window.location.search}${window.location.hash}`,
+    createdAt: Date.now()
+  };
+  localStorage.setItem(PENDING_CONNECTION_STORAGE_KEY, JSON.stringify(pending));
+
+  const connectionUrl = buildServerConnectionUrl(serverUrl, state);
+  window.open(connectionUrl, '_blank', 'noopener');
+  return connectionUrl;
+}
+
+function consumeTronbytConnectionCallback() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('tronbyt_connection') !== 'confirmed') return null;
+
+  const pending = getPendingConnection();
+  const returnedState = params.get('state');
+  const valid = pending &&
+    pending.state === returnedState &&
+    typeof pending.serverUrl === 'string' &&
+    typeof pending.createdAt === 'number' &&
+    Date.now() - pending.createdAt <= CONNECTION_MAX_AGE_MS;
+
+  if (!valid) {
+    clearPendingConnection();
+    return { error: 'This connection confirmation is invalid or has expired. Please verify the server again.' };
   }
 
-  const popup = window.open(
-    verificationUrl,
-    `tronbyt-server-verification-${nonce}`,
-    'popup,width=560,height=700'
-  );
-  verificationPopup = popup;
+  setSavedTronbytServer(pending.serverUrl);
+  clearPendingConnection();
 
-  if (!popup) {
-    verificationPopup = null;
-    return Promise.reject(new Error('Allow pop-ups for this page, then try connecting again.'));
+  const returnUrl = new URL(pending.returnPath || '/', window.location.origin);
+  if (returnUrl.origin !== window.location.origin) {
+    returnUrl.pathname = '/';
+    returnUrl.search = '';
+    returnUrl.hash = '';
   }
-
-  popup.focus();
-
-  return new Promise((resolve, reject) => {
-    let settled = false;
-
-    function finish(error, closePopup = true) {
-      if (settled) return;
-      settled = true;
-      window.removeEventListener('message', handleMessage);
-      window.clearTimeout(timeout);
-      window.clearInterval(closedCheck);
-      if (closePopup) {
-        if (!popup.closed) popup.close();
-        if (verificationPopup === popup) verificationPopup = null;
-      }
-      if (error) reject(error);
-      else resolve();
-    }
-
-    function handleMessage(event) {
-      if (event.origin !== expectedOrigin ||
-          event.data?.type !== 'tronbyt-server-verified' ||
-          event.data?.nonce !== nonce) {
-        return;
-      }
-      finish();
-    }
-
-    window.addEventListener('message', handleMessage);
-    const timeout = window.setTimeout(() => {
-      finish(new Error('Still not connected. If the opened window shows a login page, sign in there, then return here and click Verify again.'), false);
-    }, 8000);
-    const closedCheck = window.setInterval(() => {
-      if (popup.closed) {
-        finish(new Error('Verification was not completed. Sign in to your Tronbyt Server, then try again.'));
-      }
-    }, 300);
-  });
+  return { returnUrl: returnUrl.href };
 }
 
 function setupTronbytServerSettings() {
@@ -135,8 +133,8 @@ function setupTronbytServerSettings() {
   const clearButton = document.getElementById('clear-tronbyt-server');
   const openButton = document.getElementById('open-tronbyt-server');
   const settingsLabel = document.getElementById('tronbyt-settings-label');
-  const saveButton = form.querySelector('button[type="submit"]');
   const settingsButton = document.querySelector('.server-settings-button');
+  const continueLink = document.getElementById('continue-tronbyt-connection');
 
   function refreshInstallActions() {
     const connected = Boolean(getSavedTronbytServer());
@@ -147,7 +145,8 @@ function setupTronbytServerSettings() {
 
   function refreshSettings() {
     const saved = getSavedTronbytServer();
-    input.value = saved || '';
+    const pending = getPendingConnection();
+    input.value = saved || pending?.serverUrl || '';
     openButton.hidden = !saved;
     if (saved) {
       openButton.href = saved;
@@ -164,35 +163,38 @@ function setupTronbytServerSettings() {
   modalElement.addEventListener('show.bs.modal', () => {
     error.textContent = '';
     error.className = '';
+    continueLink.hidden = true;
     refreshSettings();
   });
 
-  form.addEventListener('submit', async event => {
+  form.addEventListener('submit', event => {
     event.preventDefault();
     try {
       const normalized = normalizeServerUrl(input.value);
+      const connectionUrl = beginTronbytConnection(normalized);
       error.className = 'connection-status-pending';
-      error.textContent = 'Waiting for Tronbyt Server… If a sign-in window opens, complete sign-in there.';
-      saveButton.disabled = true;
-      await verifyTronbytServer(normalized);
-      setSavedTronbytServer(normalized);
-      refreshSettings();
-      error.className = 'connection-status-success';
-      error.textContent = `Connected to Tronbyt Server at ${new URL(normalized).host}.`;
-      modal.hide();
+      error.textContent = 'Continue in the new tab. Sign in to Tronbyt if asked; it will return you to the App Viewer.';
+      continueLink.href = connectionUrl;
+      continueLink.hidden = false;
     } catch (validationError) {
       error.className = 'connection-status-error';
       error.textContent = validationError.message;
-    } finally {
-      saveButton.disabled = false;
     }
   });
 
   clearButton.addEventListener('click', () => {
     clearSavedTronbytServer();
+    clearPendingConnection();
     error.textContent = '';
     error.className = '';
+    continueLink.hidden = true;
     refreshSettings();
+  });
+
+  window.addEventListener('storage', event => {
+    if (event.key !== TRONBYT_SERVER_STORAGE_KEY || !event.newValue) return;
+    refreshSettings();
+    modal.hide();
   });
 
   refreshSettings();
@@ -845,7 +847,18 @@ async function renderAuthorProfile() {
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
+  const connectionResult = consumeTronbytConnectionCallback();
+  if (connectionResult?.returnUrl) {
+    window.location.replace(connectionResult.returnUrl);
+    return;
+  }
   setupTronbytServerSettings();
+  if (connectionResult?.error) {
+    const error = document.getElementById('tronbyt-server-error');
+    error.className = 'connection-status-error';
+    error.textContent = connectionResult.error;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('tronbyt-server-modal')).show();
+  }
   if (document.getElementById('author-content')) {
     // Author profile page
     await renderAuthorProfile();

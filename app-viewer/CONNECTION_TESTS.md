@@ -1,13 +1,13 @@
 # Tronbyt Server connection test matrix
 
 The viewer and Tronbyt Server are different web origins. Authentication is
-therefore verified through a user-initiated popup and `postMessage`; the viewer
+therefore verified through a user-initiated new tab and redirect; the viewer
 must never receive a password, session cookie, API key, username, or device
 data.
 
 ## Address validation
 
-- Empty address: show an error and do not open a popup.
+- Empty address: show an error and do not open a new tab.
 - Hostname without a scheme: assume HTTPS.
 - HTTP and HTTPS base origins: accept.
 - Address containing credentials: reject.
@@ -17,18 +17,19 @@ data.
 
 ## Authentication and verification
 
-- Tronbyt Server reachable and already signed in: verification popup closes,
-  the modal shows a persistent success message, and install buttons appear.
-- Tronbyt Server reachable but signed out: popup shows the server login page;
-  after signing in, retrying Verify succeeds.
-- Incorrect server or unrelated website: no matching verification message is
-  received and the address is not saved.
-- Popup blocked: explain that popups must be allowed; do not save the address.
-- Popup closed by the user: show a persistent incomplete-verification message.
-- Verification takes longer than eight seconds: keep the login window open and
-  explain that the user should finish signing in and retry Verify.
-- Message from the wrong origin: ignore it.
-- Message with the wrong one-time nonce: ignore it.
+- Tronbyt Server reachable and already signed in: the new tab returns to the
+  same App Viewer page with the server saved and install buttons visible.
+- Tronbyt Server reachable but signed out: the new tab shows the normal server
+  login page and resumes the connection automatically after sign-in.
+- Incorrect server or unrelated website: only the new tab fails; the original
+  viewer remains open and the address is not saved.
+- New tab blocked: leave a visible Continue to Tronbyt Server link; do not save
+  the address until a valid callback is received.
+- New tab closed by the user: leave the original viewer unchanged.
+- Callback with the wrong or expired one-time state: reject it and ask the user
+  to verify again.
+- Successful verification after password, passkey, or OIDC login: resume the
+  pending connection and return to the viewer.
 - Clear: forget the verified address and immediately hide install buttons.
 
 ## Returning visits and outages
@@ -41,8 +42,8 @@ data.
 
 Browsers do not allow a GitHub Pages site to silently inspect an authenticated
 session on a different origin. Automatic authenticated checks on page load or
-on a timer would require weakening cookie policy, storing a new credential in
-the viewer, or opening repeated popups. The viewer therefore verifies on an
+on a timer would require weakening cookie policy or storing a new credential in
+the viewer. The viewer therefore verifies on an
 explicit user gesture and lets Tronbyt enforce authentication again whenever an
 installation link is opened.
 
