@@ -745,16 +745,9 @@ async function renderAppDetail() {
 
   // App title
   const title = document.createElement('h1');
-  title.className = app.description ? 'mb-2' : 'mb-3';
+  title.className = 'mb-3';
   title.textContent = app.displayName || app.name;
   detailsSection.appendChild(title);
-
-  if (app.description) {
-    const description = document.createElement('p');
-    description.className = 'app-summary-description';
-    description.textContent = app.description;
-    detailsSection.appendChild(description);
-  }
 
   // App details and previews
   const detailsTable = document.createElement('div');
@@ -762,6 +755,13 @@ async function renderAppDetail() {
 
   const leftCol = document.createElement('div');
   leftCol.className = 'app-details-metadata';
+
+  if (app.description) {
+    const description = document.createElement('p');
+    description.className = 'app-summary-description';
+    description.textContent = app.description;
+    leftCol.appendChild(description);
+  }
 
   // Create details list
   const detailsList = document.createElement('dl');
