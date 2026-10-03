@@ -546,6 +546,9 @@ function isAppBroken(app, brokenApps = []) {
 function setupSearch(apps, brokenApps) {
   const search = document.getElementById('search');
   const clearButton = document.getElementById('clear-search');
+  const selectedTagFilter = document.getElementById('selected-tag-filter');
+  const selectedTagLabel = document.getElementById('selected-tag-label');
+  const clearTagFilter = document.getElementById('clear-tag-filter');
   const categoryFilter = document.getElementById('category-filter');
   const sortOrder = document.getElementById('sort-order');
   const hideBrokenApps = document.getElementById('hide-broken-apps');
@@ -565,10 +568,16 @@ function setupSearch(apps, brokenApps) {
     categoryFilter.appendChild(option);
   });
 
+  const knownTags = new Set(apps.flatMap(app => app.tags || []));
   const requestedTag = new URLSearchParams(window.location.search).get('tag');
-  if (requestedTag) {
-    search.value = requestedTag;
+  let selectedTag = requestedTag && knownTags.has(requestedTag) ? requestedTag : '';
+
+  function updateSelectedTag() {
+    selectedTagLabel.textContent = selectedTag;
+    selectedTagFilter.hidden = !selectedTag;
   }
+
+  updateSelectedTag();
 
   function filterApps() {
     const searchVal = search.value.toLowerCase();
@@ -583,8 +592,9 @@ function setupSearch(apps, brokenApps) {
         (app.category && app.category.toLowerCase().includes(searchVal)) ||
         (app.tags && app.tags.some(t => t.toLowerCase().includes(searchVal)));
       const matchesCategory = !categoryVal || app.category === categoryVal;
+      const matchesTag = !selectedTag || (app.tags && app.tags.includes(selectedTag));
       const matchesBroken = !hideBrokenApps.checked || !isAppBroken(app, brokenApps);
-      return matchesSearch && matchesCategory && matchesBroken;
+      return matchesSearch && matchesCategory && matchesTag && matchesBroken;
     });
 
     // Sort the filtered apps
@@ -629,6 +639,18 @@ function setupSearch(apps, brokenApps) {
   // Handle clear button click
   clearButton.addEventListener('click', () => {
     search.value = '';
+    filterApps();
+    search.focus();
+  });
+
+  clearTagFilter.addEventListener('click', () => {
+    selectedTag = '';
+    updateSelectedTag();
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('tag');
+    window.history.replaceState({}, '', url);
+
     filterApps();
     search.focus();
   });
