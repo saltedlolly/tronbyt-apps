@@ -28,6 +28,30 @@ body {
   display: none;
 }
 
+.viewer-header.use-short-title .title-full {
+  display: none;
+}
+
+.viewer-header.use-short-title .title-short {
+  display: inline;
+}
+
+.title-measure {
+  left: 0;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+  width: max-content;
+}
+
+.title-measure .title-full {
+  display: inline !important;
+}
+
+.title-measure .title-short {
+  display: none !important;
+}
+
 .card {
   background: #222;
   border: 2px solid #444;
@@ -794,16 +818,6 @@ body.dot-matrix-enabled #app-content .app-preview-image-square {
 
   #tronbyt-settings-label {
     display: none;
-  }
-}
-
-@container viewer-header (max-width: 68rem) {
-  .title-full {
-    display: none;
-  }
-
-  .title-short {
-    display: inline;
   }
 }
 

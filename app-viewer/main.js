@@ -89,6 +89,43 @@ function setButtonContent(button, icon, label) {
   button.replaceChildren(iconElement, labelElement);
 }
 
+function setupResponsiveViewerTitle() {
+  const header = document.querySelector('.viewer-header');
+  const title = header?.querySelector('.main-title');
+  const serverButton = header?.querySelector('.server-settings-button');
+  if (!header || !title || !serverButton || !title.querySelector('.title-full')) return;
+
+  const titleMeasurer = title.cloneNode(true);
+  titleMeasurer.classList.add('title-measure');
+  titleMeasurer.setAttribute('aria-hidden', 'true');
+  header.appendChild(titleMeasurer);
+
+  const updateTitle = () => {
+    const styles = window.getComputedStyle(header);
+    const gap = parseFloat(styles.columnGap || styles.gap) || 0;
+    const fullTitleWidth = titleMeasurer.getBoundingClientRect().width;
+    const serverButtonWidth = serverButton.getBoundingClientRect().width;
+    const needsShortTitle = fullTitleWidth + serverButtonWidth + gap > header.clientWidth;
+    header.classList.toggle('use-short-title', needsShortTitle);
+  };
+
+  const resizeObserver = new ResizeObserver(updateTitle);
+  resizeObserver.observe(header);
+  resizeObserver.observe(serverButton);
+
+  const serverLabel = serverButton.querySelector('#tronbyt-settings-label');
+  if (serverLabel) {
+    new MutationObserver(updateTitle).observe(serverLabel, {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
+  }
+
+  document.fonts?.ready?.then(updateTitle);
+  updateTitle();
+}
+
 function createAddToTronbytButton(app, isBroken) {
   const button = document.createElement('button');
   button.type = 'button';
@@ -1137,6 +1174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
   setupTronbytServerSettings();
+  setupResponsiveViewerTitle();
   if (connectionResult?.error) {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('tronbyt-server-modal')).show();
     const error = document.getElementById('tronbyt-server-error');
