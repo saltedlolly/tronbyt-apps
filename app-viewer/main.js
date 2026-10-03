@@ -780,15 +780,6 @@ async function renderAppDetail() {
     detailsList.appendChild(intervalDesc);
   }
 
-  if (app.description) {
-    const descTerm = document.createElement('dt');
-    descTerm.textContent = 'Description:';
-    const descDesc = document.createElement('dd');
-    descDesc.textContent = app.description;
-    detailsList.appendChild(descTerm);
-    detailsList.appendChild(descDesc);
-  }
-
   if (app.published) {
     const publishedTerm = document.createElement('dt');
     publishedTerm.textContent = 'Published:';
@@ -827,6 +818,17 @@ async function renderAppDetail() {
   });
   detailsList.appendChild(displaysTerm);
   detailsList.appendChild(displaysDesc);
+
+  if (app.description) {
+    const descTerm = document.createElement('dt');
+    descTerm.className = 'app-description-label';
+    descTerm.textContent = 'Description:';
+    const descDesc = document.createElement('dd');
+    descDesc.className = 'app-description-value';
+    descDesc.textContent = app.description;
+    detailsList.appendChild(descTerm);
+    detailsList.appendChild(descDesc);
+  }
 
   leftCol.appendChild(detailsList);
   detailsTable.appendChild(leftCol);
@@ -895,11 +897,14 @@ async function renderAppDetail() {
   const md = await fetchAppMarkdown(appName);
 
   if (md) {
-    // Add "More Details" section header
+    const readmeSection = document.createElement('section');
+    readmeSection.className = 'app-readme-section';
+
+    // Add README section header
     const moreDetailsHeader = document.createElement('h2');
-    moreDetailsHeader.className = 'mt-4 mb-3';
+    moreDetailsHeader.className = 'mb-3';
     moreDetailsHeader.textContent = 'Readme';
-    container.appendChild(moreDetailsHeader);
+    readmeSection.appendChild(moreDetailsHeader);
 
     try {
       // Custom renderer to fix image paths
@@ -931,7 +936,7 @@ async function renderAppDetail() {
         if (resolvedSrc) image.src = resolvedSrc;
         if (!image.alt) image.alt = `${app.displayName || app.name} screenshot`;
       });
-      container.appendChild(markdownContainer);
+      readmeSection.appendChild(markdownContainer);
     } catch (error) {
       console.error('Marked.js error:', error);
 
@@ -939,13 +944,15 @@ async function renderAppDetail() {
       const errorAlert = document.createElement('div');
       errorAlert.className = 'alert alert-danger';
       errorAlert.textContent = 'Error rendering markdown: ' + error.message;
-      container.appendChild(errorAlert);
+      readmeSection.appendChild(errorAlert);
 
       // Show raw markdown as fallback
       const pre = document.createElement('pre');
       pre.textContent = md; // Safe: textContent prevents XSS
-      container.appendChild(pre);
+      readmeSection.appendChild(pre);
     }
+
+    container.appendChild(readmeSection);
   }
 
   // Add buttons at the bottom - Back to Apps on left, Report Broken on right
