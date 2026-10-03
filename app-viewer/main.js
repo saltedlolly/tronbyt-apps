@@ -23,6 +23,33 @@ const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 const MD_FILES = ['README.md', 'readme.md', 'index.md'];
 const DEFAULT_SORT_ORDER = 'updated';
 const PENDING_CONNECTION_STORAGE_KEY = 'tronbyt.apps.pendingConnection';
+const VIEWER_STATE_PARAMS = ['q', 'category', 'display', 'sort', 'tag', 'hideBroken', 'scroll'];
+
+function getViewerStateParams(search = window.location.search) {
+  const source = new URLSearchParams(search);
+  const state = new URLSearchParams();
+  VIEWER_STATE_PARAMS.forEach(name => {
+    if (source.has(name)) state.set(name, source.get(name));
+  });
+  return state;
+}
+
+function buildViewerStateUrl(path) {
+  const params = getViewerStateParams();
+  const query = params.toString();
+  return `${path}${query ? `?${query}` : ''}`;
+}
+
+function rememberViewerScroll(event) {
+  const url = new URL(event.currentTarget.href, window.location.href);
+  const scrollY = Math.round(window.scrollY);
+  if (scrollY > 0) {
+    url.searchParams.set('scroll', String(scrollY));
+  } else {
+    url.searchParams.delete('scroll');
+  }
+  event.currentTarget.href = url.href;
+}
 
 function getSavedTronbytConnection() {
   try {
@@ -467,12 +494,13 @@ function renderAppsList(apps, brokenApps = [], displayMode = 'standard') {
     }
 
     // URL for app details page
-    const detailUrl = BASE_PATH + `details/${encodeURIComponent(app.name)}.html`;
+    const detailUrl = buildViewerStateUrl(BASE_PATH + `details/${encodeURIComponent(app.name)}.html`);
 
     // Wrap image in a link
     const imageLink = document.createElement('a');
     imageLink.href = detailUrl;
     imageLink.className = 'text-decoration-none';
+    imageLink.addEventListener('click', rememberViewerScroll);
 
     // Create image element
     let imageElement;
@@ -508,6 +536,7 @@ function renderAppsList(apps, brokenApps = [], displayMode = 'standard') {
     const titleLink = document.createElement('a');
     titleLink.href = detailUrl;
     titleLink.className = 'text-decoration-none d-block';
+    titleLink.addEventListener('click', rememberViewerScroll);
 
     const title = document.createElement('h5');
     title.className = 'card-title app-card-title';
@@ -546,6 +575,7 @@ function renderAppsList(apps, brokenApps = [], displayMode = 'standard') {
     button.href = detailUrl;
     button.className = 'btn btn-primary';
     setButtonContent(button, '📄', 'View Details');
+    button.addEventListener('click', rememberViewerScroll);
 
     actions.appendChild(button);
     actions.appendChild(createAddToTronbytButton(app, isBroken));
@@ -581,11 +611,17 @@ function setupSearch(apps, brokenApps) {
   const displayFilter = document.getElementById('display-filter');
   const sortOrder = document.getElementById('sort-order');
   const hideBrokenApps = document.getElementById('hide-broken-apps');
+  const queryParams = new URLSearchParams(window.location.search);
+  const requestedScroll = Number.parseInt(queryParams.get('scroll') || '', 10);
 
-  try {
-    hideBrokenApps.checked = localStorage.getItem('hideBrokenApps') === 'true';
-  } catch {
-    hideBrokenApps.checked = false;
+  if (queryParams.get('hideBroken') === '1') {
+    hideBrokenApps.checked = true;
+  } else {
+    try {
+      hideBrokenApps.checked = localStorage.getItem('hideBrokenApps') === 'true';
+    } catch {
+      hideBrokenApps.checked = false;
+    }
   }
 
   // Extract and populate categories
@@ -598,13 +634,24 @@ function setupSearch(apps, brokenApps) {
   });
 
   const knownTags = new Set(apps.flatMap(app => app.tags || []));
-  const queryParams = new URLSearchParams(window.location.search);
   const requestedTag = queryParams.get('tag');
   let selectedTag = requestedTag && knownTags.has(requestedTag) ? requestedTag : '';
+
+  search.value = queryParams.get('q') || '';
+
+  const requestedCategory = queryParams.get('category');
+  if (requestedCategory && categories.includes(requestedCategory)) {
+    categoryFilter.value = requestedCategory;
+  }
 
   const requestedDisplay = queryParams.get('display');
   if (['standard', 'wide', 'square'].includes(requestedDisplay)) {
     displayFilter.value = requestedDisplay;
+  }
+
+  const requestedSort = queryParams.get('sort');
+  if (['updated', 'alphabetical', 'newest'].includes(requestedSort)) {
+    sortOrder.value = requestedSort;
   }
 
   function updateSelectedTag() {
@@ -619,6 +666,23 @@ function setupSearch(apps, brokenApps) {
     const categoryVal = categoryFilter.value;
     const displayVal = displayFilter.value;
     const sortVal = sortOrder.value;
+
+    const url = new URL(window.location.href);
+    const setOrDelete = (name, value, defaultValue = '') => {
+      if (value && value !== defaultValue) {
+        url.searchParams.set(name, value);
+      } else {
+        url.searchParams.delete(name);
+      }
+    };
+    setOrDelete('q', search.value.trim());
+    setOrDelete('category', categoryVal);
+    setOrDelete('display', displayVal, 'standard');
+    setOrDelete('sort', sortVal, DEFAULT_SORT_ORDER);
+    setOrDelete('tag', selectedTag);
+    setOrDelete('hideBroken', hideBrokenApps.checked ? '1' : '');
+    url.searchParams.delete('scroll');
+    window.history.replaceState({}, '', url);
 
     let filtered = apps.filter(app => {
       const matchesSearch = !searchVal ||
@@ -686,16 +750,14 @@ function setupSearch(apps, brokenApps) {
   clearTagFilter.addEventListener('click', () => {
     selectedTag = '';
     updateSelectedTag();
-
-    const url = new URL(window.location.href);
-    url.searchParams.delete('tag');
-    window.history.replaceState({}, '', url);
-
     filterApps();
     search.focus();
   });
 
   filterApps();
+  if (Number.isFinite(requestedScroll) && requestedScroll > 0) {
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, requestedScroll)));
+  }
 }
 
 // --- APP DETAIL PAGE LOGIC ---
@@ -761,6 +823,9 @@ function getAppNameFromURL() {
 async function renderAppDetail() {
   const appName = getAppNameFromURL();
   const container = document.getElementById('app-content');
+  const backToAppsUrl = buildViewerStateUrl(`${BASE_PATH}index.html`);
+  const headerBackButton = document.querySelector('.viewer-header > a.btn-secondary');
+  if (headerBackButton) headerBackButton.href = backToAppsUrl;
   if (!appName) {
     // Safe: static HTML content
     container.innerHTML = '<div class="alert alert-danger">App not specified.</div>';
@@ -1073,7 +1138,7 @@ async function renderAppDetail() {
 
   // Back to Apps button (left side)
   const backButton = document.createElement('a');
-  backButton.href = isDetailsPage ? '../index.html' : 'index.html';
+  backButton.href = backToAppsUrl;
   backButton.className = 'btn btn-secondary';
   backButton.textContent = '← Back to Apps';
 
