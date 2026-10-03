@@ -1152,7 +1152,7 @@ async function renderAppDetail() {
     container.appendChild(readmeSection);
   }
 
-  // Add buttons at the bottom - Back to Apps on left, Report Broken on right
+  // Add buttons at the bottom - Back to Apps on left, Report Issue on right
   const reportContainer = document.createElement('div');
   reportContainer.className = 'mt-4 pt-4 border-top d-flex justify-content-between flex-wrap gap-2';
 
@@ -1166,7 +1166,7 @@ async function renderAppDetail() {
   rightActions.className = 'detail-actions d-flex gap-2 flex-wrap justify-content-end';
   rightActions.appendChild(createAddToTronbytButton(app, isBroken));
 
-  // Report Broken button (right side)
+  // Report Issue button (right side)
   let reportControl;
   if (isBroken) {
     const reportTooltip = document.createElement('span');
@@ -1179,18 +1179,18 @@ async function renderAppDetail() {
     reportButton.type = 'button';
     reportButton.className = 'btn btn-warning report-button';
     reportButton.disabled = true;
-    reportButton.textContent = '🐛 Report Broken';
+    reportButton.textContent = '🐛 Report Issue';
     reportTooltip.appendChild(reportButton);
     reportControl = reportTooltip;
   } else {
     const reportButton = document.createElement('a');
-    const reportBody = `The app \`${appName}\` appears to be broken.\n\nPlease describe why the app is broken and how to reproduce the issue:`;
-    const reportUrl = `https://github.com/tronbyt/apps/issues/new?title=Report%20Broken%20App:%20${encodeURIComponent(appName)}&body=${encodeURIComponent(reportBody)}`;
+    const reportBody = `There appears to be an issue with the app \`${appName}\`.\n\nPlease describe the issue and how to reproduce it:`;
+    const reportUrl = `https://github.com/tronbyt/apps/issues/new?title=App%20Issue:%20${encodeURIComponent(appName)}&body=${encodeURIComponent(reportBody)}`;
     reportButton.href = reportUrl;
     reportButton.target = '_blank';
     reportButton.rel = 'noopener';
     reportButton.className = 'btn btn-warning report-button';
-    reportButton.textContent = '🐛 Report Broken';
+    reportButton.textContent = '🐛 Report Issue';
     reportControl = reportButton;
   }
 
