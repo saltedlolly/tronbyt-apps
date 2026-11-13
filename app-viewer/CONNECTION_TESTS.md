@@ -34,11 +34,14 @@ version string.
 - New tab blocked: leave a visible Continue to Tronbyt Server link; do not save
   the address until a valid callback is received.
 - New tab closed by the user: leave the original viewer unchanged.
-- After 20 seconds without confirmation: keep waiting, but reveal Try Again,
-  Update Tronbyt Server, and Cancel actions. Do not state that an update is
-  definitely required because an outage or blocked tab looks the same.
+- After 20 seconds without confirmation: keep waiting, but reveal Try Again and
+  Cancel actions. Do not state that an update is definitely required because an
+  outage or blocked tab looks the same.
 - Try Again: create a fresh one-time state and open the current address again.
 - Cancel: clear only the pending attempt. Keep any previously verified server.
+- Successful confirmation in a script-opened tab: save the verified server and
+  close the tab. If the browser refuses to close it (including a same-tab
+  fallback), show a confirmation with a Return to App Viewer link.
 - Clear: forget the verified and pending addresses and immediately hide install
   buttons.
 

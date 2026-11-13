@@ -8,6 +8,7 @@ import {
   buildCommunityInstallUrl,
   buildServerConnectionUrl,
   connectionHelpDelay,
+  isLocalNetworkHostname,
   normalizeServerUrl,
   parseStoredConnection,
   serializeStoredConnection,
@@ -26,6 +27,36 @@ test('normalizes Tronbyt server addresses', () => {
     normalizeServerUrl('https://umbrel.local:19191/devices/example?tab=apps#community'),
     'https://umbrel.local:19191'
   );
+});
+
+test('allows HTTP only for local-network server names and addresses', () => {
+  for (const hostname of [
+    'localhost',
+    'tronbyt',
+    'tronbyt.local',
+    'tronbyt.home.arpa',
+    '127.0.0.1',
+    '10.0.0.5',
+    '172.16.0.5',
+    '172.31.255.254',
+    '192.168.1.20',
+    '169.254.1.2',
+    '[::1]',
+    '[fd00::20]',
+    '[fe80::20]'
+  ]) {
+    assert.equal(isLocalNetworkHostname(hostname), true, hostname);
+    assert.doesNotThrow(() => normalizeServerUrl(`http://${hostname}:19192`));
+  }
+
+  for (const hostname of ['example.com', '8.8.8.8', '172.32.0.1']) {
+    assert.equal(isLocalNetworkHostname(hostname), false, hostname);
+    assert.throws(
+      () => normalizeServerUrl(`http://${hostname}:19192`),
+      /must use https/
+    );
+    assert.doesNotThrow(() => normalizeServerUrl(`https://${hostname}:19192`));
+  }
 });
 
 test('rejects unsafe addresses', () => {

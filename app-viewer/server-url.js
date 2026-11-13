@@ -3,6 +3,29 @@ export const APP_VIEWER_PROTOCOL = 1;
 export const CONNECTION_MAX_AGE_MS = 10 * 60 * 1000;
 export const CONNECTION_HELP_DELAY_MS = 20 * 1000;
 
+export function isLocalNetworkHostname(hostname) {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (normalized === 'localhost' || normalized.endsWith('.localhost') ||
+      normalized.endsWith('.local') || normalized.endsWith('.home.arpa') ||
+      !normalized.includes('.')) {
+    return true;
+  }
+
+  const ipv4 = normalized.split('.').map(part => Number(part));
+  if (ipv4.length === 4 && ipv4.every(part => Number.isInteger(part) && part >= 0 && part <= 255)) {
+    return ipv4[0] === 10 ||
+      ipv4[0] === 127 ||
+      (ipv4[0] === 169 && ipv4[1] === 254) ||
+      (ipv4[0] === 172 && ipv4[1] >= 16 && ipv4[1] <= 31) ||
+      (ipv4[0] === 192 && ipv4[1] === 168);
+  }
+
+  return normalized === '::1' ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    /^fe[89ab]/.test(normalized);
+}
+
 export function normalizeServerUrl(value) {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -30,6 +53,9 @@ export function normalizeServerUrl(value) {
   }
   if (url.username || url.password) {
     throw new Error('Enter a server address without credentials.');
+  }
+  if (url.protocol === 'http:' && !isLocalNetworkHostname(url.hostname)) {
+    throw new Error('Public Tronbyt Server addresses must use https://.');
   }
   // Only the origin identifies a Tronbyt Server. This also lets someone paste
   // a page they already have open, such as /auth/login, without correcting it.

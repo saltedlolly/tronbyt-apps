@@ -23,8 +23,10 @@ const BROKEN_APPS_FILE = isNestedPage ? '../broken_apps.txt' : 'broken_apps.txt'
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 const MD_FILES = ['README.md', 'readme.md', 'index.md'];
 const DEFAULT_SORT_ORDER = 'updated';
+const APP_BATCH_SIZE = 60;
+const SEARCH_DEBOUNCE_MS = 150;
 const PENDING_CONNECTION_STORAGE_KEY = 'tronbyt.apps.pendingConnection';
-const VIEWER_STATE_PARAMS = ['q', 'category', 'display', 'sort', 'tag', 'hideBroken', 'scroll'];
+const VIEWER_STATE_PARAMS = ['q', 'category', 'display', 'sort', 'tag', 'hideBroken', 'count', 'scroll'];
 
 function getViewerStateParams(search = window.location.search) {
   const source = new URLSearchParams(search);
@@ -219,6 +221,29 @@ function consumeTronbytConnectionCallback() {
   return { returnUrl: returnUrl.href };
 }
 
+function showConnectionComplete(returnUrl) {
+  const main = document.createElement('main');
+  main.className = 'connection-complete';
+
+  const card = document.createElement('section');
+  card.className = 'connection-complete-card';
+
+  const heading = document.createElement('h1');
+  heading.textContent = 'Tronbyt Server verified';
+
+  const message = document.createElement('p');
+  message.textContent = 'Your Tronbyt Server has been verified. You can now return to the Tronbyt App Viewer website.';
+
+  const link = document.createElement('a');
+  link.className = 'btn btn-success';
+  link.href = returnUrl;
+  link.textContent = 'Return to App Viewer';
+
+  card.append(heading, message, link);
+  main.append(card);
+  document.body.replaceChildren(main);
+}
+
 function setupTronbytServerSettings() {
   const modalElement = document.getElementById('tronbyt-server-modal');
   const form = document.getElementById('tronbyt-server-form');
@@ -264,7 +289,7 @@ function setupTronbytServerSettings() {
     resetConnectionProgress();
     const connectionUrl = buildServerConnectionUrl(pending.serverUrl, pending.state, pending.protocol);
     error.className = 'connection-status-pending';
-    error.textContent = 'Continue in the new tab. Sign in to Tronbyt if asked; it will return you to the App Viewer.';
+    error.textContent = 'Continue in the new tab. Sign in to Tronbyt if asked; and then return here when you are done.';
     continueLink.href = connectionUrl;
     continueLink.hidden = false;
 
@@ -457,12 +482,20 @@ async function fetchAppsList() {
   return [];
 }
 
-function renderAppsList(apps, brokenApps = [], displayMode = 'standard') {
+function renderAppsList(
+  apps,
+  brokenApps = [],
+  displayMode = 'standard',
+  { limit = apps.length, onLoadMore = null } = {}
+) {
   const list = document.getElementById('apps-list');
+  list.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(element => {
+    bootstrap.Tooltip.getInstance(element)?.dispose();
+  });
   list.replaceChildren();
-  apps.forEach(app => {
+  apps.slice(0, limit).forEach(app => {
     const card = document.createElement('div');
-    card.className = 'col-md-4';
+    card.className = 'col-6 col-md-4 app-list-item';
 
     // Check if the app's star file is in the broken apps list
     const isBroken = isAppBroken(app, brokenApps);
@@ -489,7 +522,6 @@ function renderAppsList(apps, brokenApps = [], displayMode = 'standard') {
       const badge2x = document.createElement('div');
       badge2x.className = 'app-badge badge-2x';
       badge2x.title = 'Supports 2x resolution';
-      badge2x.setAttribute('data-bs-toggle', 'tooltip');
       badge2x.textContent = '2X';
       badgeContainer.appendChild(badge2x);
     }
@@ -510,16 +542,22 @@ function renderAppsList(apps, brokenApps = [], displayMode = 'standard') {
       imageElement.src = `${APPS_DIR}/${app.image64x64}`;
       imageElement.className = 'card-img-top';
       imageElement.alt = `${app.name} square preview`;
+      imageElement.loading = 'lazy';
+      imageElement.decoding = 'async';
     } else if (displayMode === 'wide' && app.image2x) {
       imageElement = document.createElement('img');
       imageElement.src = `${APPS_DIR}/${app.image2x}`;
       imageElement.className = 'card-img-top';
       imageElement.alt = app.name;
+      imageElement.loading = 'lazy';
+      imageElement.decoding = 'async';
     } else if (app.image) {
       imageElement = document.createElement('img');
       imageElement.src = `${APPS_DIR}/${app.image}`;
       imageElement.className = 'card-img-top';
       imageElement.alt = app.name; // Safe: alt attribute is automatically escaped
+      imageElement.loading = 'lazy';
+      imageElement.decoding = 'async';
     } else {
       imageElement = document.createElement('div');
       imageElement.className = 'card-img-top d-flex align-items-center justify-content-center bg-secondary text-white';
@@ -550,7 +588,6 @@ function renderAppsList(apps, brokenApps = [], displayMode = 'standard') {
       const warningSpan = document.createElement('span');
       warningSpan.className = 'app-card-broken-icon text-warning';
       warningSpan.title = 'Broken app';
-      warningSpan.setAttribute('data-bs-toggle', 'tooltip');
       warningSpan.setAttribute('aria-label', 'Broken app');
       warningSpan.textContent = '⚠️';
       title.appendChild(warningSpan);
@@ -589,13 +626,19 @@ function renderAppsList(apps, brokenApps = [], displayMode = 'standard') {
     list.appendChild(card);
   });
 
-  // Initialize tooltips
-  const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-  tooltips.forEach(tooltip => {
-    new bootstrap.Tooltip(tooltip, {
-      customClass: 'tooltip-custom'
-    });
-  });
+  if (limit < apps.length && onLoadMore) {
+    const moreContainer = document.createElement('div');
+    moreContainer.className = 'col-12 d-flex justify-content-center app-list-more';
+
+    const moreButton = document.createElement('button');
+    moreButton.type = 'button';
+    moreButton.className = 'btn btn-secondary';
+    moreButton.textContent = `Load more (${apps.length - limit} remaining)`;
+    moreButton.addEventListener('click', onLoadMore);
+
+    moreContainer.appendChild(moreButton);
+    list.appendChild(moreContainer);
+  }
 }
 
 function isAppBroken(app, brokenApps = []) {
@@ -614,6 +657,11 @@ function setupSearch(apps, brokenApps) {
   const hideBrokenApps = document.getElementById('hide-broken-apps');
   const queryParams = new URLSearchParams(window.location.search);
   const requestedScroll = Number.parseInt(queryParams.get('scroll') || '', 10);
+  const requestedCount = Number.parseInt(queryParams.get('count') || '', 10);
+  let visibleCount = Number.isFinite(requestedCount) && requestedCount > APP_BATCH_SIZE
+    ? requestedCount
+    : APP_BATCH_SIZE;
+  let searchTimer;
 
   if (queryParams.get('hideBroken') === '1') {
     hideBrokenApps.checked = true;
@@ -662,7 +710,8 @@ function setupSearch(apps, brokenApps) {
 
   updateSelectedTag();
 
-  function filterApps() {
+  function filterApps({ resetVisible = true } = {}) {
+    if (resetVisible) visibleCount = APP_BATCH_SIZE;
     const searchVal = search.value.toLowerCase();
     const categoryVal = categoryFilter.value;
     const displayVal = displayFilter.value;
@@ -682,6 +731,7 @@ function setupSearch(apps, brokenApps) {
     setOrDelete('sort', sortVal, DEFAULT_SORT_ORDER);
     setOrDelete('tag', selectedTag);
     setOrDelete('hideBroken', hideBrokenApps.checked ? '1' : '');
+    setOrDelete('count', visibleCount > APP_BATCH_SIZE ? String(visibleCount) : '');
     url.searchParams.delete('scroll');
     window.history.replaceState({}, '', url);
 
@@ -719,14 +769,23 @@ function setupSearch(apps, brokenApps) {
       }
     });
 
-    renderAppsList(filtered, brokenApps, displayVal);
+    renderAppsList(filtered, brokenApps, displayVal, {
+      limit: visibleCount,
+      onLoadMore: () => {
+        visibleCount += APP_BATCH_SIZE;
+        filterApps({ resetVisible: false });
+      }
+    });
 
     // The clear button belongs to the search field, so only show it for text.
     clearButton.style.display = searchVal ? 'block' : 'none';
   }
 
   // Handle search input
-  search.addEventListener('input', filterApps);
+  search.addEventListener('input', () => {
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(filterApps, SEARCH_DEBOUNCE_MS);
+  });
 
   // Handle filter changes
   categoryFilter.addEventListener('change', filterApps);
@@ -743,6 +802,7 @@ function setupSearch(apps, brokenApps) {
 
   // Handle clear button click
   clearButton.addEventListener('click', () => {
+    window.clearTimeout(searchTimer);
     search.value = '';
     filterApps();
     search.focus();
@@ -755,7 +815,7 @@ function setupSearch(apps, brokenApps) {
     search.focus();
   });
 
-  filterApps();
+  filterApps({ resetVisible: false });
   if (Number.isFinite(requestedScroll) && requestedScroll > 0) {
     requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, requestedScroll)));
   }
@@ -1001,6 +1061,8 @@ async function renderAppDetail() {
       const image = document.createElement('img');
       image.src = `${APPS_DIR}/${imagePath}`;
       image.alt = altText;
+      image.loading = 'lazy';
+      image.decoding = 'async';
       image.className = 'app-preview-image img-fluid rounded border';
       if (previewClass === 'app-preview-square') {
         image.classList.add('app-preview-image-square');
@@ -1114,6 +1176,8 @@ async function renderAppDetail() {
         const resolvedSrc = resolveAppAssetUrl(image.getAttribute('src'), appName);
         if (resolvedSrc) image.src = resolvedSrc;
         if (!image.alt) image.alt = `${app.displayName || app.name} screenshot`;
+        image.loading = 'lazy';
+        image.decoding = 'async';
 
         const classifyImage = () => {
           const kind = classifyReadmeImage({
@@ -1274,7 +1338,8 @@ async function renderAuthorProfile() {
 document.addEventListener('DOMContentLoaded', async () => {
   const connectionResult = consumeTronbytConnectionCallback();
   if (connectionResult?.returnUrl) {
-    window.location.replace(connectionResult.returnUrl);
+    window.close();
+    window.setTimeout(() => showConnectionComplete(connectionResult.returnUrl), 150);
     return;
   }
   setupTronbytServerSettings();

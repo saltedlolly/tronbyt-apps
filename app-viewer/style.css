@@ -650,6 +650,10 @@ body.dot-matrix-enabled .app-readme img.readme-device-square {
   margin-left: auto;
 }
 
+.app-list-more {
+  padding-block: 0.5rem 1rem;
+}
+
 .badge-2x {
   background: rgba(13, 110, 253, 0.9);
   color: #fff;
@@ -801,6 +805,10 @@ body.dot-matrix-enabled .app-readme img.readme-device-square {
   margin: -0.5rem 0 1.25rem;
 }
 
+.server-requirement a {
+  color: inherit;
+}
+
 #tronbyt-server-error {
   font-size: 0.65rem;
   line-height: 1.5;
@@ -845,6 +853,31 @@ body.dot-matrix-enabled .app-readme img.readme-device-square {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.connection-complete {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1.5rem;
+}
+
+.connection-complete-card {
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 0.5rem;
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 30%);
+  max-width: 34rem;
+  padding: 1.5rem;
+  width: 100%;
+}
+
+.connection-complete-card p {
+  color: #ccc;
+  font-size: 0.75rem;
+  line-height: 1.6;
 }
 
 @container viewer-header (max-width: 52rem) {
@@ -931,6 +964,37 @@ body.dot-matrix-enabled .app-readme img.readme-device-square {
 }
 
 @media (max-width: 767px) {
+  #apps-list {
+    --bs-gutter-x: 1rem;
+    --bs-gutter-y: 1rem;
+  }
+
+  #apps-list .card {
+    min-height: 0;
+  }
+
+  #apps-list .card-body {
+    padding: 0.8rem;
+  }
+
+  #apps-list .card-title {
+    font-size: 0.72rem;
+    line-height: 1.45;
+  }
+
+  #apps-list .card-description {
+    font-size: 0.6rem;
+    line-height: 1.45;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  #apps-list .btn {
+    padding: 0.5rem 0.35rem;
+    font-size: 0.62rem;
+    line-height: 1.4;
+  }
+
   .viewer-header {
     gap: 0.75rem;
   }
@@ -981,6 +1045,12 @@ body.dot-matrix-enabled .app-readme img.readme-device-square {
   }
 
   .detail-actions .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 419px) {
+  #apps-list .app-list-item {
     width: 100%;
   }
 }
