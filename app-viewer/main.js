@@ -20,6 +20,7 @@ const isNestedPage = isDetailsPage || isAuthorPage;
 const BASE_PATH = isNestedPage ? '../' : '';
 const APPS_DIR = isNestedPage ? '../apps' : 'apps';
 const BROKEN_APPS_FILE = isNestedPage ? '../broken_apps.txt' : 'broken_apps.txt';
+const CATALOGUE_META_FILE = isNestedPage ? '../catalogue-meta.json' : 'catalogue-meta.json';
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 const MD_FILES = ['README.md', 'readme.md', 'index.md'];
 const DEFAULT_SORT_ORDER = 'updated';
@@ -27,6 +28,7 @@ const APP_BATCH_SIZE = 60;
 const SEARCH_DEBOUNCE_MS = 150;
 const PENDING_CONNECTION_STORAGE_KEY = 'tronbyt.apps.pendingConnection';
 const VIEWER_STATE_PARAMS = ['q', 'category', 'display', 'sort', 'tag', 'hideBroken', 'count', 'scroll'];
+let appListObserver = null;
 
 function getViewerStateParams(search = window.location.search) {
   const source = new URLSearchParams(search);
@@ -37,23 +39,118 @@ function getViewerStateParams(search = window.location.search) {
   return state;
 }
 
+// The catalogue's state (search, filters, scroll) arrives on a detail or author page in its address, then is kept in
+// the page's history entry instead (see tidyPageAddress), where it survives a reload
+function currentViewerState() {
+  const fromAddress = getViewerStateParams();
+  return fromAddress.toString() ? fromAddress : getViewerStateParams(window.history.state?.viewerState || '');
+}
+
 function buildViewerStateUrl(path) {
-  const params = getViewerStateParams();
+  const params = currentViewerState();
   const query = params.toString();
   return `${path}${query ? `?${query}` : ''}`;
 }
 
-function rememberViewerScroll(event) {
-  const url = new URL(event.currentTarget.href, window.location.href);
+export function rememberViewerScroll(event) {
   const scrollY = Math.round(window.scrollY);
+  const catalogueUrl = new URL(window.location.href);
+  const detailUrl = new URL(event.currentTarget.href, window.location.href);
+
   if (scrollY > 0) {
-    url.searchParams.set('scroll', String(scrollY));
+    catalogueUrl.searchParams.set('scroll', String(scrollY));
+    detailUrl.searchParams.set('scroll', String(scrollY));
   } else {
-    url.searchParams.delete('scroll');
+    catalogueUrl.searchParams.delete('scroll');
+    detailUrl.searchParams.delete('scroll');
   }
-  event.currentTarget.href = url.href;
+
+  // Save the position on the catalogue history entry itself. The browser can
+  // then restore it when the detail page uses history.back(), even if the
+  // dynamically generated catalogue must be rebuilt instead of coming from
+  // the back/forward cache. Keep it on the detail URL as the fallback too.
+  window.history.replaceState(window.history.state, '', catalogueUrl);
+  event.currentTarget.href = detailUrl.href;
 }
 
+// Takes the catalogue's state and any ".html" out of a detail or author page's address, so what's in the address bar is
+// the page's own clean link and can be copied and shared. The state moves into the history entry, so Back to Apps still
+// returns to the same place, even after a reload.
+export function tidyPageAddress() {
+  const url = new URL(window.location.href);
+  const viewerState = currentViewerState().toString();
+  VIEWER_STATE_PARAMS.forEach(name => url.searchParams.delete(name));
+  url.pathname = url.pathname.replace(/\.html$/, '');
+  if (url.href !== window.location.href || viewerState !== (window.history.state?.viewerState || '')) {
+    window.history.replaceState({ ...(window.history.state || {}), viewerState }, '', url);
+  }
+}
+
+// The page's clean link, for sharing
+export function shareablePageUrl(href = window.location.href) {
+  const url = new URL(href);
+  url.search = '';
+  url.hash = '';
+  url.pathname = url.pathname.replace(/\.html$/, '');
+  return url.href;
+}
+
+// Share goes on the same row as the Back to Apps button at the top of the page, on the right
+function placeShareButton(title) {
+  const backToApps = document.querySelector('body > .container > a.btn-secondary');
+  if (!backToApps) return;
+  const topRow = document.createElement('div');
+  topRow.className = 'page-top-row';
+  backToApps.replaceWith(topRow);
+  backToApps.classList.remove('mb-3');
+  topRow.appendChild(backToApps);
+  topRow.appendChild(createShareButton(title));
+}
+
+// "Share": the share sheet on phones and tablets, otherwise copies the link
+function createShareButton(title) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn-info share-button';
+  button.textContent = '🔗 Share';
+  button.addEventListener('click', async () => {
+    const url = shareablePageUrl();
+    if (navigator.share && window.matchMedia('(pointer: coarse)').matches) {
+      try {
+        await navigator.share({ title, url });
+      } catch {
+        // Cancelled
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      button.textContent = '✓ Link copied';
+      setTimeout(() => { button.textContent = '🔗 Share'; }, 2000);
+    } catch {
+      window.prompt('Copy this link:', url);
+    }
+  });
+  return button;
+}
+
+export function restoreViewerScroll(scrollY) {
+  const restore = () => window.scrollTo(0, scrollY);
+
+  // Restore immediately when the catalogue is already laid out (for example,
+  // from the back/forward cache), then correct once the web font has finished
+  // loading because it can change card heights above the saved position.
+  restore();
+  const fontsReady = document.fonts?.ready || Promise.resolve();
+  fontsReady.then(() => {
+    restore();
+    requestAnimationFrame(() => requestAnimationFrame(restore));
+  });
+}
+
+// --- CACHE MANAGEMENT ---
+// Simple in-memory cache to avoid redundant network requests
+// Data persists only for this page lifetime; each page load revalidates it.
 function getSavedTronbytConnection() {
   try {
     return parseStoredConnection(localStorage.getItem(TRONBYT_SERVER_STORAGE_KEY));
@@ -395,19 +492,24 @@ function setupTronbytServerSettings() {
 // --- CACHE MANAGEMENT ---
 // Simple in-memory cache to avoid redundant network requests
 // Data persists for the duration of the browser session
+
 const appCache = {
   appsList: null,
   brokenApps: null,
+  catalogueMetadata: null,
   isAppsListLoaded: false,
-  isBrokenAppsLoaded: false
+  isBrokenAppsLoaded: false,
+  isCatalogueMetadataLoaded: false
 };
 
 // Function to clear cache (useful for development or manual refresh)
 function clearAppCache() {
   appCache.appsList = null;
   appCache.brokenApps = null;
+  appCache.catalogueMetadata = null;
   appCache.isAppsListLoaded = false;
   appCache.isBrokenAppsLoaded = false;
+  appCache.isCatalogueMetadataLoaded = false;
 }
 
 // Function to preload all data (useful for optimizing initial page load)
@@ -429,7 +531,7 @@ async function fetchBrokenApps() {
 
   console.log('🔄 Fetching broken apps from server...');
   try {
-    const res = await fetch(BROKEN_APPS_FILE);
+    const res = await fetch(BROKEN_APPS_FILE, { cache: 'no-cache' });
     if (res.ok) {
       const text = await res.text();
       const brokenApps = text.split('\n').map(line => line.trim()).filter(line => line);
@@ -461,7 +563,7 @@ async function fetchAppsList() {
   console.log('🔄 Fetching apps list from server...');
   // Load the generated apps.json file
   try {
-    const res = await fetch(BASE_PATH + 'apps.json');
+    const res = await fetch(BASE_PATH + 'apps.json', { cache: 'no-cache' });
     if (res.ok) {
       const apps = await res.json();
 
@@ -482,6 +584,49 @@ async function fetchAppsList() {
   return [];
 }
 
+async function fetchCatalogueMetadata() {
+  if (appCache.isCatalogueMetadataLoaded) return appCache.catalogueMetadata;
+
+  try {
+    const response = await fetch(CATALOGUE_META_FILE, { cache: 'no-cache' });
+    if (response.ok) {
+      appCache.catalogueMetadata = normalizeCatalogueMetadata(await response.json());
+    }
+  } catch (error) {
+    console.warn('Catalogue provenance is unavailable:', error);
+  }
+
+  appCache.isCatalogueMetadataLoaded = true;
+  return appCache.catalogueMetadata;
+}
+
+export function normalizeCatalogueMetadata(metadata) {
+  const validRepository = typeof metadata?.repository === 'string' &&
+    /^github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(metadata.repository);
+  const validCommit = typeof metadata?.commit === 'string' &&
+    /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(metadata.commit);
+
+  if (metadata?.schemaVersion !== 1 || !validRepository || !validCommit) return null;
+
+  return {
+    repository: metadata.repository.toLowerCase(),
+    commit: metadata.commit.toLowerCase()
+  };
+}
+
+export function buildAppSourceUrl(metadata, appName) {
+  if (!metadata) return null;
+  return `https://${metadata.repository}/tree/main/apps/${encodeURIComponent(appName)}`;
+}
+
+function createPixelGithubIcon() {
+  const icon = document.createElement('img');
+  icon.src = `${BASE_PATH}github-logo.svg`;
+  icon.alt = '';
+  icon.className = 'github-pixel-icon';
+  return icon;
+}
+
 function renderAppsList(
   apps,
   brokenApps = [],
@@ -489,6 +634,8 @@ function renderAppsList(
   { limit = apps.length, onLoadMore = null } = {}
 ) {
   const list = document.getElementById('apps-list');
+  appListObserver?.disconnect();
+  appListObserver = null;
   list.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(element => {
     bootstrap.Tooltip.getInstance(element)?.dispose();
   });
@@ -520,14 +667,16 @@ function renderAppsList(
     // Add 2x badge if needed
     if (displayMode === 'standard' && app.supports2x) {
       const badge2x = document.createElement('div');
-      badge2x.className = 'app-badge badge-2x';
-      badge2x.title = 'Supports 2x resolution';
+      badge2x.className = 'app-badge badge-2x pixel-tooltip';
+      badge2x.dataset.tooltip = 'Supports Wide / 2x';
+      badge2x.setAttribute('aria-label', 'Supports Wide / 2x');
+      badge2x.setAttribute('tabindex', '0');
       badge2x.textContent = '2X';
       badgeContainer.appendChild(badge2x);
     }
 
     // URL for app details page
-    const detailUrl = buildViewerStateUrl(BASE_PATH + `details/${encodeURIComponent(app.name)}.html`);
+    const detailUrl = buildViewerStateUrl(BASE_PATH + `details/${encodeURIComponent(app.name)}`);
 
     // Wrap image in a link
     const imageLink = document.createElement('a');
@@ -586,9 +735,10 @@ function renderAppsList(
 
     if (isBroken) {
       const warningSpan = document.createElement('span');
-      warningSpan.className = 'app-card-broken-icon text-warning';
-      warningSpan.title = 'Broken app';
+      warningSpan.className = 'app-card-broken-icon text-warning pixel-tooltip';
+      warningSpan.dataset.tooltip = 'Broken app';
       warningSpan.setAttribute('aria-label', 'Broken app');
+      warningSpan.setAttribute('tabindex', '0');
       warningSpan.textContent = '⚠️';
       title.appendChild(warningSpan);
     }
@@ -605,9 +755,6 @@ function renderAppsList(
       cardBody.appendChild(description);
     }
 
-    const actions = document.createElement('div');
-    actions.className = 'card-actions mt-auto d-grid gap-2';
-
     // Create button - all apps should have details from manifest
     const button = document.createElement('a');
     button.href = detailUrl;
@@ -615,6 +762,8 @@ function renderAppsList(
     setButtonContent(button, '📄', 'View Details');
     button.addEventListener('click', rememberViewerScroll);
 
+    const actions = document.createElement('div');
+    actions.className = 'card-actions mt-auto d-grid gap-2';
     actions.appendChild(button);
     actions.appendChild(createAddToTronbytButton(app, isBroken));
     cardBody.appendChild(actions);
@@ -629,6 +778,7 @@ function renderAppsList(
   if (limit < apps.length && onLoadMore) {
     const moreContainer = document.createElement('div');
     moreContainer.className = 'col-12 d-flex justify-content-center app-list-more';
+    moreContainer.setAttribute('aria-live', 'polite');
 
     const moreButton = document.createElement('button');
     moreButton.type = 'button';
@@ -638,11 +788,74 @@ function renderAppsList(
 
     moreContainer.appendChild(moreButton);
     list.appendChild(moreContainer);
+
+    if ('IntersectionObserver' in window) {
+      moreButton.hidden = true;
+      const loadingText = document.createElement('span');
+      loadingText.className = 'app-list-loading';
+      loadingText.textContent = 'More apps load automatically as you scroll';
+      moreContainer.appendChild(loadingText);
+
+      appListObserver = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return;
+        appListObserver?.disconnect();
+        appListObserver = null;
+        loadingText.textContent = 'Loading more apps…';
+        onLoadMore();
+      }, { rootMargin: '600px 0px' });
+      appListObserver.observe(moreContainer);
+    }
   }
 }
 
 function isAppBroken(app, brokenApps = []) {
   return app.broken === true || Boolean(app.starFile && brokenApps.includes(app.starFile));
+}
+
+export function filterAndSortApps(apps, {
+  search = '',
+  category = '',
+  tag = '',
+  display = 'standard',
+  sort = DEFAULT_SORT_ORDER,
+  hideBroken = false,
+  brokenApps = []
+} = {}) {
+  const searchValue = search.toLowerCase();
+  const filtered = apps.filter(app => {
+    const matchesSearch = !searchValue ||
+      app.name.toLowerCase().includes(searchValue) ||
+      (app.displayName && app.displayName.toLowerCase().includes(searchValue)) ||
+      (app.summary && app.summary.toLowerCase().includes(searchValue)) ||
+      (app.description && app.description.toLowerCase().includes(searchValue)) ||
+      (app.author && app.author.toLowerCase().includes(searchValue)) ||
+      (app.category && app.category.toLowerCase().includes(searchValue)) ||
+      (app.tags && app.tags.some(value => value.toLowerCase().includes(searchValue)));
+    const matchesCategory = !category || app.category === category;
+    const matchesTag = !tag || (app.tags && app.tags.includes(tag));
+    const matchesDisplay = display === 'standard' ||
+      (display === 'wide' && app.supports2x) ||
+      (display === 'square' && app.supports64x64);
+    const matchesBroken = !hideBroken || !isAppBroken(app, brokenApps);
+    return matchesSearch && matchesCategory && matchesTag && matchesDisplay && matchesBroken;
+  });
+
+  return filtered.sort((a, b) => {
+    if (sort === 'newest') {
+      const dateA = a.published ? new Date(a.published) : new Date(0);
+      const dateB = b.published ? new Date(b.published) : new Date(0);
+      return dateB - dateA;
+    }
+    if (sort === 'updated') {
+      const dateA = a.updated ? new Date(a.updated) : new Date(0);
+      const dateB = b.updated ? new Date(b.updated) : new Date(0);
+      return dateB - dateA;
+    }
+
+    const nameA = (a.displayName || a.name).toLowerCase();
+    const nameB = (b.displayName || b.name).toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
 }
 
 function setupSearch(apps, brokenApps) {
@@ -735,38 +948,14 @@ function setupSearch(apps, brokenApps) {
     url.searchParams.delete('scroll');
     window.history.replaceState({}, '', url);
 
-    let filtered = apps.filter(app => {
-      const matchesSearch = !searchVal ||
-        app.name.toLowerCase().includes(searchVal) ||
-        (app.displayName && app.displayName.toLowerCase().includes(searchVal)) ||
-        (app.summary && app.summary.toLowerCase().includes(searchVal)) ||
-        (app.category && app.category.toLowerCase().includes(searchVal)) ||
-        (app.tags && app.tags.some(t => t.toLowerCase().includes(searchVal)));
-      const matchesCategory = !categoryVal || app.category === categoryVal;
-      const matchesTag = !selectedTag || (app.tags && app.tags.includes(selectedTag));
-      const matchesDisplay = displayVal === 'standard' ||
-        (displayVal === 'wide' && app.supports2x) ||
-        (displayVal === 'square' && app.supports64x64);
-      const matchesBroken = !hideBrokenApps.checked || !isAppBroken(app, brokenApps);
-      return matchesSearch && matchesCategory && matchesTag && matchesDisplay && matchesBroken;
-    });
-
-    // Sort the filtered apps
-    filtered.sort((a, b) => {
-      if (sortVal === 'newest') {
-        const dateA = a.published ? new Date(a.published) : new Date(0);
-        const dateB = b.published ? new Date(b.published) : new Date(0);
-        return dateB - dateA;
-      } else if (sortVal === 'updated') {
-        const dateA = a.updated ? new Date(a.updated) : new Date(0);
-        const dateB = b.updated ? new Date(b.updated) : new Date(0);
-        return dateB - dateA;
-      } else {
-        // Alphabetical
-        const nameA = (a.displayName || a.name).toLowerCase();
-        const nameB = (b.displayName || b.name).toLowerCase();
-        return nameA.localeCompare(nameB);
-      }
+    const filtered = filterAndSortApps(apps, {
+      search: searchVal,
+      category: categoryVal,
+      tag: selectedTag,
+      display: displayVal,
+      sort: sortVal,
+      hideBroken: hideBrokenApps.checked,
+      brokenApps
     });
 
     renderAppsList(filtered, brokenApps, displayVal, {
@@ -817,7 +1006,7 @@ function setupSearch(apps, brokenApps) {
 
   filterApps({ resetVisible: false });
   if (Number.isFinite(requestedScroll) && requestedScroll > 0) {
-    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, requestedScroll)));
+    restoreViewerScroll(requestedScroll);
   }
 }
 
@@ -875,19 +1064,40 @@ function getAppNameFromURL() {
   // Fallback to filename
   const pathname = window.location.pathname;
   if (pathname.includes('/details/')) {
-    const match = pathname.match(/\/details\/([^/]+)\.html/);
+    const match = pathname.match(/\/details\/([^/]+?)(?:\.html)?$/);
     if (match) return decodeURIComponent(match[1]);
   }
 
   return null;
 }
 
+function configureBackToAppsLink(link, fallbackUrl) {
+  link.href = fallbackUrl;
+  link.addEventListener('click', event => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+    try {
+      const referrer = new URL(document.referrer);
+      const catalogueUrl = new URL(fallbackUrl, window.location.href);
+      const catalogueDirectory = catalogueUrl.pathname.replace(/index\.html$/, '');
+      const cameFromCatalogue = referrer.origin === window.location.origin &&
+        (referrer.pathname === catalogueUrl.pathname || referrer.pathname === catalogueDirectory);
+      if (!cameFromCatalogue) return;
+    } catch {
+      return;
+    }
+
+    event.preventDefault();
+    window.history.back();
+  });
+}
+
 async function renderAppDetail() {
   const appName = getAppNameFromURL();
   const container = document.getElementById('app-content');
   const backToAppsUrl = buildViewerStateUrl(`${BASE_PATH}index.html`);
-  const headerBackButton = document.querySelector('.viewer-header > a.btn-secondary');
-  if (headerBackButton) headerBackButton.href = backToAppsUrl;
+  const headerBackButton = document.querySelector('body > .container > a.btn-secondary');
+  if (headerBackButton) configureBackToAppsLink(headerBackButton, backToAppsUrl);
   if (!appName) {
     // Safe: static HTML content
     container.innerHTML = '<div class="alert alert-danger">App not specified.</div>';
@@ -909,8 +1119,12 @@ async function renderAppDetail() {
     return;
   }
 
-  const brokenApps = await fetchBrokenApps();
+  const [brokenApps, catalogueMetadata] = await Promise.all([
+    fetchBrokenApps(),
+    fetchCatalogueMetadata()
+  ]);
   const isBroken = isAppBroken(app, brokenApps);
+  const appSourceUrl = buildAppSourceUrl(catalogueMetadata, appName);
 
   // Create app details section from manifest data
   const detailsSection = document.createElement('div');
@@ -947,7 +1161,7 @@ async function renderAppDetail() {
     const authorDesc = document.createElement('dd');
     if (app.authorSlug) {
       const authorLink = document.createElement('a');
-      authorLink.href = `${BASE_PATH}authors/${encodeURIComponent(app.authorSlug)}.html`;
+      authorLink.href = `${BASE_PATH}authors/${encodeURIComponent(app.authorSlug)}`;
       authorLink.className = 'author-link';
       authorLink.textContent = app.author;
       authorDesc.appendChild(authorLink);
@@ -1176,6 +1390,7 @@ async function renderAppDetail() {
         const resolvedSrc = resolveAppAssetUrl(image.getAttribute('src'), appName);
         if (resolvedSrc) image.src = resolvedSrc;
         if (!image.alt) image.alt = `${app.displayName || app.name} screenshot`;
+        image.referrerPolicy = 'no-referrer';
         image.loading = 'lazy';
         image.decoding = 'async';
 
@@ -1216,21 +1431,34 @@ async function renderAppDetail() {
     container.appendChild(readmeSection);
   }
 
+  placeShareButton(`${app.displayName || appName} - Tronbyt App`);
+
   // Add buttons at the bottom - Back to Apps on left, Report Issue on right
   const reportContainer = document.createElement('div');
-  reportContainer.className = 'mt-4 pt-4 border-top d-flex justify-content-between flex-wrap gap-2';
+  reportContainer.className = 'detail-footer mt-4 pt-4 border-top d-flex justify-content-between';
 
   // Back to Apps button (left side)
   const backButton = document.createElement('a');
-  backButton.href = backToAppsUrl;
+  configureBackToAppsLink(backButton, backToAppsUrl);
   backButton.className = 'btn btn-secondary';
   backButton.textContent = '← Back to Apps';
 
-  const rightActions = document.createElement('div');
-  rightActions.className = 'detail-actions d-flex gap-2 flex-wrap justify-content-end';
-  rightActions.appendChild(createAddToTronbytButton(app, isBroken));
-
   // Report Issue button (right side)
+  const rightActions = document.createElement('div');
+  rightActions.className = 'detail-actions';
+
+  let sourceLink = null;
+  if (appSourceUrl) {
+    sourceLink = document.createElement('a');
+    sourceLink.href = appSourceUrl;
+    sourceLink.target = '_blank';
+    sourceLink.rel = 'noopener';
+    sourceLink.className = 'app-source-link pixel-tooltip';
+    sourceLink.dataset.tooltip = 'View app source on GitHub';
+    sourceLink.setAttribute('aria-label', 'View app source on GitHub');
+    sourceLink.appendChild(createPixelGithubIcon());
+  }
+
   let reportControl;
   if (isBroken) {
     const reportTooltip = document.createElement('span');
@@ -1248,8 +1476,12 @@ async function renderAppDetail() {
     reportControl = reportTooltip;
   } else {
     const reportButton = document.createElement('a');
-    const reportBody = `There appears to be an issue with the app \`${appName}\`.\n\nPlease describe the issue and how to reproduce it:`;
-    const reportUrl = `https://github.com/tronbyt/apps/issues/new?title=App%20Issue:%20${encodeURIComponent(appName)}&body=${encodeURIComponent(reportBody)}`;
+    const reportTitle = `Feedback for app: ${app.displayName || appName}`;
+    const appReference = appSourceUrl
+      ? `App folder: [\`apps/${appName}\`](${appSourceUrl})`
+      : `App: \`apps/${appName}\``;
+    const reportBody = `${appReference}\n\nPlease describe your feedback, problem, or suggestion:`;
+    const reportUrl = `https://github.com/tronbyt/apps/issues/new?title=${encodeURIComponent(reportTitle)}&body=${encodeURIComponent(reportBody)}`;
     reportButton.href = reportUrl;
     reportButton.target = '_blank';
     reportButton.rel = 'noopener';
@@ -1259,7 +1491,9 @@ async function renderAppDetail() {
   }
 
   reportContainer.appendChild(backButton);
+  rightActions.appendChild(createAddToTronbytButton(app, isBroken));
   rightActions.appendChild(reportControl);
+  if (sourceLink) rightActions.appendChild(sourceLink);
   reportContainer.appendChild(rightActions);
   container.appendChild(reportContainer);
 
@@ -1279,7 +1513,7 @@ function getAuthorSlugFromURL() {
 
   const pathname = window.location.pathname;
   if (pathname.includes('/authors/')) {
-    const match = pathname.match(/\/authors\/([^/]+)\.html/);
+    const match = pathname.match(/\/authors\/([^/]+?)(?:\.html)?$/);
     if (match) return decodeURIComponent(match[1]);
   }
 
@@ -1306,6 +1540,8 @@ async function renderAuthorProfile() {
   const metaAuthorName = document.querySelector('meta[name="author-name"]');
   const authorName = metaAuthorName?.getAttribute('content') || authorApps[0].author;
 
+  container.replaceChildren(); // Remove the summary written into the page for search engines
+
   const header = document.createElement('div');
   header.className = 'author-profile-header mb-4';
 
@@ -1313,25 +1549,207 @@ async function renderAuthorProfile() {
   title.className = 'main-title mb-3';
   title.textContent = authorName;
 
-  const count = document.createElement('p');
-  count.className = 'author-app-count mb-0';
-  count.textContent = `${authorApps.length} ${authorApps.length === 1 ? 'app' : 'apps'}`;
+  placeShareButton(`${authorName} - Tronbyt Apps`);
 
   header.appendChild(title);
-  header.appendChild(count);
   container.appendChild(header);
+
+  // Display and Sort, as on the catalogue. They start from the catalogue's choices when the page was opened from it.
+  const state = currentViewerState();
+  // Only the displays at least one of the author's apps supports (every app works on a standard display)
+  const displayOptions = DISPLAY_OPTIONS.filter(([value]) => value === 'standard' ||
+    (value === 'wide' && authorApps.some(app => app.supports2x)) ||
+    (value === 'square' && authorApps.some(app => app.supports64x64)));
+  const displayFilter = createFilterSelect('display-filter', 'Display', displayOptions,
+    displayOptions.some(([value]) => value === state.get('display')) ? state.get('display') : 'standard');
+  const sortOrder = createFilterSelect('sort-order', 'Sort', SORT_OPTIONS,
+    SORT_OPTIONS.some(([value]) => value === state.get('sort')) ? state.get('sort') : DEFAULT_SORT_ORDER);
+  const filters = document.createElement('div');
+  filters.className = 'author-filters mb-4';
+  if (displayOptions.length > 1) filters.appendChild(displayFilter); // Only Standard: nothing to choose
+  if (authorApps.length > 1) filters.appendChild(sortOrder); // Nothing to sort with one app
+
+  // The page's dot matrix setting sits to the right of the menus
+  const dotMatrix = document.getElementById('dot-matrix-toggle')?.closest('.form-check');
+  if (dotMatrix) {
+    const emptyWrapper = dotMatrix.parentElement;
+    dotMatrix.classList.add('author-filters-dot-matrix');
+    filters.appendChild(dotMatrix);
+    if (emptyWrapper && !emptyWrapper.children.length) emptyWrapper.remove();
+  }
+
+  // Hide broken apps, as on the catalogue; it also sets which apps the counts and the footer include
+  const hideBroken = document.createElement('div');
+  hideBroken.className = 'form-check author-filters-dot-matrix';
+  const hideBrokenApps = document.createElement('input');
+  hideBrokenApps.className = 'form-check-input';
+  hideBrokenApps.type = 'checkbox';
+  hideBrokenApps.id = 'hide-broken-apps';
+  hideBrokenApps.checked = isHidingBrokenApps();
+  const hideBrokenLabel = document.createElement('label');
+  hideBrokenLabel.className = 'form-check-label';
+  hideBrokenLabel.htmlFor = 'hide-broken-apps';
+  hideBrokenLabel.textContent = 'Hide broken apps';
+  hideBroken.appendChild(hideBrokenApps);
+  hideBroken.appendChild(hideBrokenLabel);
+  filters.appendChild(hideBroken);
+  container.appendChild(filters);
 
   const list = document.createElement('div');
   list.id = 'apps-list';
   list.className = 'row g-4';
   container.appendChild(list);
 
-  authorApps.sort((a, b) => {
-    const nameA = (a.displayName || a.name).toLowerCase();
-    const nameB = (b.displayName || b.name).toLowerCase();
-    return nameA.localeCompare(nameB);
+  function showApps() {
+    const display = displayFilter.value;
+    const sort = sortOrder.value;
+    const hidingBroken = hideBrokenApps.checked;
+
+    // Remember the choices with the rest of the catalogue's state, so the app pages opened from here and Back to
+    // Apps keep them, without adding them to the address
+    const saved = currentViewerState();
+    if (display === 'standard') saved.delete('display'); else saved.set('display', display);
+    if (sort === DEFAULT_SORT_ORDER) saved.delete('sort'); else saved.set('sort', sort);
+    if (hidingBroken) saved.set('hideBroken', '1'); else saved.delete('hideBroken');
+    window.history.replaceState({ ...(window.history.state || {}), viewerState: saved.toString() }, '', window.location.href);
+
+    const shownApps = hidingBroken ? authorApps.filter(app => !isAppBroken(app, brokenApps)) : authorApps;
+    header.querySelector('.display-counts')?.remove();
+    header.appendChild(createDisplayCounts(shownApps));
+    renderAppsList(filterAndSortApps(shownApps, { display, sort }), brokenApps, display);
+    if (!shownApps.length) {
+      const message = document.createElement('p');
+      message.className = 'author-empty';
+      message.textContent = `All of ${authorName}'s apps are broken. Untick Hide broken apps to see them.`;
+      list.appendChild(message);
+    }
+  }
+
+  displayFilter.addEventListener('change', showApps);
+  sortOrder.addEventListener('change', showApps);
+  hideBrokenApps.addEventListener('change', () => {
+    try {
+      localStorage.setItem('hideBrokenApps', String(hideBrokenApps.checked));
+    } catch {
+      // Filtering still works for this page when storage is unavailable.
+    }
+    showApps();
   });
-  renderAppsList(authorApps, brokenApps);
+  showApps();
+}
+
+// A row of app counts: the total, then how many support each display (every app works on a standard display).
+// Used in an author's panel and, for the whole catalogue, in the footer, where each count also shows its share of the total.
+function createDisplayCounts(apps, { showPercent = false } = {}) {
+  const count = document.createElement('span');
+  count.className = 'display-counts-total';
+  count.textContent = `${apps.length.toLocaleString('en-US')} ${apps.length === 1 ? 'app' : 'apps'}`;
+
+  const displayCounts = document.createElement('div');
+  displayCounts.className = 'display-counts';
+  displayCounts.appendChild(count);
+  if (!apps.length) {
+    displayCounts.classList.add('display-counts-empty'); // No separator after the total
+    return displayCounts;
+  }
+  // The counts for each display wrap within their own block, so a wrapped line starts under the first of them
+  const countClip = document.createElement('div');
+  countClip.className = 'display-counts-clip';
+  const countList = document.createElement('div');
+  countList.className = 'display-counts-list';
+  countClip.appendChild(countList);
+  displayCounts.appendChild(countClip);
+  for (const [value, label] of DISPLAY_OPTIONS) {
+    const supported = apps.filter(app => value === 'standard' ||
+      (value === 'wide' && app.supports2x) || (value === 'square' && app.supports64x64)).length;
+    if (!supported) continue;
+    const box = document.createElement('span');
+    box.className = 'display-count';
+    const name = document.createElement('span');
+    name.textContent = label;
+    const number = document.createElement('span');
+    number.className = 'display-count-number';
+    number.textContent = `${supported.toLocaleString('en-US')} ${supported === 1 ? 'app' : 'apps'}`;
+    const text = document.createElement('span');
+    text.className = 'display-count-text';
+    text.appendChild(name);
+    // The share stays with its count, so the two wrap together
+    if (showPercent) {
+      const percent = document.createElement('span');
+      percent.className = 'display-count-percent';
+      percent.textContent = `(${formatShare(supported, apps.length)})`;
+      number.appendChild(percent);
+    }
+    text.appendChild(number);
+    box.appendChild(text);
+    countList.appendChild(box);
+  }
+  return displayCounts;
+}
+
+// A share of the total as a whole percentage, never rounded up to 100% or down to 0%
+function formatShare(part, total) {
+  const percent = Math.round(part / total * 100);
+  if (part < total && percent === 100) return '99%';
+  if (part > 0 && percent === 0) return '<1%';
+  return `${percent}%`;
+}
+
+// Whether "Hide broken apps" is ticked: from the catalogue's state when the page was opened from it, otherwise the
+// choice remembered in this browser
+function isHidingBrokenApps() {
+  const checkbox = document.getElementById('hide-broken-apps');
+  if (checkbox) return checkbox.checked;
+  if (currentViewerState().get('hideBroken') === '1') return true;
+  try {
+    return localStorage.getItem('hideBrokenApps') === 'true';
+  } catch {
+    return false;
+  }
+}
+
+// A thin footer on every page: a link to Tronbyt, and the catalogue's app counts, leaving out broken apps when
+// "Hide broken apps" is ticked
+async function renderSiteFooter() {
+  const page = document.querySelector('body > .container');
+  if (!page || page.querySelector('.site-footer')) return;
+  const { apps, brokenApps } = await preloadAppData();
+
+  const footer = document.createElement('footer');
+  footer.className = 'site-footer';
+  const link = document.createElement('a');
+  link.href = 'https://tronbyt.com/';
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.textContent = 'Learn about Tronbyt';
+  footer.appendChild(link);
+  page.appendChild(footer);
+
+  const showCounts = () => {
+    footer.querySelector('.display-counts')?.remove();
+    const counted = isHidingBrokenApps() ? apps.filter(app => !isAppBroken(app, brokenApps)) : apps;
+    if (counted.length) footer.appendChild(createDisplayCounts(counted, { showPercent: true }));
+  };
+  showCounts();
+  document.getElementById('hide-broken-apps')?.addEventListener('change', showCounts);
+}
+
+const DISPLAY_OPTIONS = [['standard', 'Standard / 1x'], ['wide', 'Wide / 2x'], ['square', 'Square']];
+const SORT_OPTIONS = [['alphabetical', 'A-Z'], ['newest', 'Newest'], ['updated', 'Last Updated']];
+
+function createFilterSelect(id, label, options, selected) {
+  const select = document.createElement('select');
+  select.id = id;
+  select.className = 'form-select';
+  select.setAttribute('aria-label', label);
+  for (const [value, text] of options) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = `${label}: ${text}`;
+    option.selected = value === selected;
+    select.appendChild(option);
+  }
+  return select;
 }
 
 // --- INIT ---
@@ -1352,6 +1770,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   if (document.getElementById('author-content')) {
     // Author profile page
+    tidyPageAddress();
     await renderAuthorProfile();
     setupDotMatrixToggle();
   } else if (document.getElementById('apps-list')) {
@@ -1361,9 +1780,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupDotMatrixToggle();
   } else if (document.getElementById('app-content')) {
     // App detail page
-    renderAppDetail();
+    tidyPageAddress();
     setupDotMatrixToggle();
+    await renderAppDetail();
   }
+  renderSiteFooter();
 });
 
 // --- DOT MATRIX TOGGLE ---

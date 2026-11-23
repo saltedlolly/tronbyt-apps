@@ -1,8 +1,18 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'fs';
-import { join, extname, dirname, basename } from 'path';
+import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync } from 'fs';
+import { join, extname, dirname, basename, resolve } from 'path';
 import { createHash } from 'crypto';
 import { load } from 'js-yaml';
 import { fileURLToPath } from 'url';
+import {
+  buildAppCard,
+  buildAuthorCard,
+  buildSiteCard,
+  cardFileName,
+  CARD_HEIGHT,
+  CARD_WIDTH,
+  MAX_TILES,
+  tiledCardFileName,
+} from './social-cards.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -11,11 +21,19 @@ const __dirname = dirname(__filename);
 const args = process.argv.slice(2);
 let outputFile = join(__dirname, 'apps.json');
 let appsPath = join(__dirname, '../apps');
+let withCards = true;
+let reuseCardsDir = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--output' && i + 1 < args.length) {
     outputFile = args[i + 1];
   } else if (args[i] === '--apps-path' && i + 1 < args.length) {
     appsPath = args[i + 1];
+  } else if (args[i] === '--reuse-cards' && i + 1 < args.length) {
+    // A folder of previously published cards (e.g. the last deployment's cards/). A card whose file name, which
+    // includes a hash of everything on it, is already there is copied rather than drawn again.
+    reuseCardsDir = args[i + 1];
+  } else if (args[i] === '--no-cards') {
+    withCards = false; // Quicker local builds: pages still link to cards, but none are drawn
   }
 }
 const APPS_DIR = appsPath;
@@ -23,6 +41,12 @@ const outputDir = dirname(outputFile);
 const OUTPUT_FILE = outputFile;
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 const MD_FILES = ['README.md', 'readme.md', 'index.md'];
+const SITE_URL = 'https://apps.tronbyt.com/';
+const SITE_NAME = 'Tronbyt App Viewer';
+// The placeholder card name in index.html. A build into a separate folder (the deployed site) rewrites the copied
+// index.html to point at the home card's hashed name instead, so sharing sites fetch it again when it changes.
+const SITE_CARD = 'cards/tronbyt-app-viewer.png';
+const CARD_CONCURRENCY = 4;
 
 function normalizeAuthor(author) {
   return author
@@ -91,12 +115,236 @@ function buildAuthorProfiles(apps) {
   return profiles.sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
-function escapeHtmlAttribute(value) {
+export function escapeHtmlAttribute(value) {
   return String(value)
+    .replace(/\r?\n/g, ' ')
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+// Open Graph / Twitter tags shared by every generated page
+function socialTags({ title, description, url, image, imageAlt }) {
+  return `<title>${escapeHtmlAttribute(title)}</title>
+        <meta name="description" content="${escapeHtmlAttribute(description)}">
+        <link rel="canonical" href="${escapeHtmlAttribute(url)}">
+        <meta property="og:site_name" content="${SITE_NAME}">
+        <meta property="og:title" content="${escapeHtmlAttribute(title)}">
+        <meta property="og:description" content="${escapeHtmlAttribute(description)}">
+        <meta property="og:url" content="${escapeHtmlAttribute(url)}">
+        <meta property="og:type" content="website">
+        <meta property="og:image" content="${escapeHtmlAttribute(image)}">
+        <meta property="og:image:type" content="image/png">
+        <meta property="og:image:width" content="${CARD_WIDTH}">
+        <meta property="og:image:height" content="${CARD_HEIGHT}">
+        <meta property="og:image:alt" content="${escapeHtmlAttribute(imageAlt)}">
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:title" content="${escapeHtmlAttribute(title)}">
+        <meta name="twitter:description" content="${escapeHtmlAttribute(description)}">
+        <meta name="twitter:image" content="${escapeHtmlAttribute(image)}">
+        <meta name="twitter:image:alt" content="${escapeHtmlAttribute(imageAlt)}">`;
+}
+
+// JSON for a <script> element: "<" is escaped so the data can't end the element early
+function scriptJson(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+export function appPageUrl(app) {
+  return `${SITE_URL}details/${encodeURIComponent(app.name)}`;
+}
+
+export function buildAppMetaTags(app, cardPath = SITE_CARD) {
+  const name = app.displayName || app.name;
+  const title = `${name} - Tronbyt App`;
+  const description = app.summary || app.description || 'View details for this Tronbyt app.';
+  const url = appPageUrl(app);
+  const image = SITE_URL + cardPath;
+
+  // Structured data, so search engines know the page describes an app
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name,
+    description: app.description || app.summary || undefined,
+    url,
+    image,
+    applicationCategory: 'Tronbyt app',
+    applicationSubCategory: app.category || undefined,
+    operatingSystem: 'Tronbyt',
+    keywords: app.tags && app.tags.length ? app.tags.join(', ') : undefined,
+    author: app.author ? { '@type': 'Person', name: app.author } : undefined,
+    datePublished: app.published || undefined,
+    dateModified: app.updated || undefined,
+  };
+
+  return `${socialTags({ title, description, url, image, imageAlt: `${name} on a Tronbyt display` })}
+        <script type="application/ld+json">${scriptJson(data)}</script>
+        <meta name="app-name" content="${escapeHtmlAttribute(app.name)}">`;
+}
+
+// The app's details written into the page, for search engines and sharing sites that don't run JavaScript.
+// The page's script replaces it with the full details.
+export function buildAppPrerender(app) {
+  const name = app.displayName || app.name;
+  const parts = [`<h1>${escapeHtmlAttribute(name)}</h1>`];
+  if (app.summary && app.summary !== app.description) parts.push(`<p>${escapeHtmlAttribute(app.summary)}</p>`);
+  if (app.description) parts.push(`<p>${escapeHtmlAttribute(app.description)}</p>`);
+  if (app.author) {
+    const author = escapeHtmlAttribute(app.author);
+    parts.push(app.authorSlug
+      ? `<p>By <a href="../authors/${encodeURIComponent(app.authorSlug)}">${author}</a></p>`
+      : `<p>By ${author}</p>`);
+  }
+  if (app.tags && app.tags.length) {
+    const tags = app.tags.map(tag => `<a href="../index.html?tag=${encodeURIComponent(tag)}">${escapeHtmlAttribute(tag)}</a>`);
+    parts.push(`<p>Tags: ${tags.join(', ')}</p>`);
+  }
+  return parts.join('\n                ');
+}
+
+export function buildAuthorMetaTags(profile, cardPath = SITE_CARD) {
+  const appCount = profile.apps.length;
+  const title = `${profile.displayName} - Tronbyt Apps`;
+  const description = `${appCount} Tronbyt ${appCount === 1 ? 'app' : 'apps'} by ${profile.displayName}.`;
+  const url = `${SITE_URL}authors/${encodeURIComponent(profile.slug)}`;
+  return `${socialTags({ title, description, url, image: SITE_URL + cardPath, imageAlt: `Tronbyt apps by ${profile.displayName}` })}
+        <meta name="author-slug" content="${escapeHtmlAttribute(profile.slug)}">
+        <meta name="author-name" content="${escapeHtmlAttribute(profile.displayName)}">`;
+}
+
+// The author's apps written into the page as links, so search engines can find each app's page
+export function buildAuthorPrerender(profile) {
+  const apps = profile.apps
+    .map(app => `<li><a href="../details/${encodeURIComponent(app.name)}">${escapeHtmlAttribute(app.displayName || app.name)}</a>${app.summary ? ` - ${escapeHtmlAttribute(app.summary)}` : ''}</li>`)
+    .join('\n                    ');
+  return `<h1>${escapeHtmlAttribute(profile.displayName)}</h1>
+                <ul>
+                    ${apps}
+                </ul>`;
+}
+
+function sitemapDate(value) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : null;
+}
+
+// Every page, for search engines
+// Lets search engines find the sitemap
+export function buildRobotsTxt() {
+  return `User-agent: *
+Allow: /
+
+Sitemap: ${SITE_URL}sitemap.xml
+`;
+}
+
+export function buildSitemap(apps, profiles) {
+  const entry = (url, lastmod) =>
+    `  <url><loc>${escapeHtmlAttribute(url)}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}</url>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${[
+    entry(SITE_URL),
+    ...apps.map(app => entry(appPageUrl(app), sitemapDate(app.updated || app.published))),
+    ...profiles.map(profile => entry(`${SITE_URL}authors/${encodeURIComponent(profile.slug)}`)),
+  ].join('\n')}
+</urlset>
+`;
+}
+
+// The screenshot shown on an app's card: 128x64 if there is one, then 64x32, then 64x64
+function cardScreenshot(app) {
+  const image = app.image2x || app.image || app.image64x64;
+  return image ? join(APPS_DIR, image) : null;
+}
+
+// Work out each app's card file name (it depends on the screenshot, so a new screenshot gives a new card)
+function planCards(apps) {
+  return new Map(apps.map(app => {
+    const screenshot = cardScreenshot(app);
+    let bytes = null;
+    try {
+      bytes = screenshot ? readFileSync(screenshot) : null;
+    } catch {
+      // A missing screenshot gets the logo card
+    }
+    return [app.name, `cards/${cardFileName(app, bytes)}`];
+  }));
+}
+
+// Screenshots to tile on an author or home card: apps that aren't marked broken, most recently updated first,
+// preferring the 64x32 screenshot (a 128x64 one loses its dots when drawn small). Extra candidates are kept in case
+// some can't be read or are skipped as photos or blank screens.
+export function tileCandidates(apps) {
+  return apps
+    .filter(app => !app.broken && (app.image || app.image2x || app.image64x64))
+    .sort((a, b) => String(b.updated || b.published || '').localeCompare(String(a.updated || a.published || '')))
+    .slice(0, MAX_TILES * 3)
+    .map(app => join(APPS_DIR, app.image || app.image2x || app.image64x64));
+}
+
+function authorCardTexts(profile) {
+  return [profile.displayName, profile.apps.length];
+}
+
+// Each author's card file name (it depends on their apps' screenshots, so it changes when the card would)
+function planAuthorCards(profiles) {
+  return new Map(profiles.map(profile => [
+    profile.slug,
+    `cards/${tiledCardFileName(`author-${profile.slug}`, authorCardTexts(profile), tileCandidates(profile.apps))}`,
+  ]));
+}
+
+// The home card's file name: changes whenever the app count or any recently updated app's screenshot changes
+function planSiteCard(apps) {
+  return `cards/${tiledCardFileName('tronbyt-app-viewer', ['site', apps.length], tileCandidates(apps))}`;
+}
+
+// Point the home page's card tags at the current home card
+export function pointHomePageAtCard(html, cardPath) {
+  return html.replace(/https:\/\/[^"]*\/cards\/tronbyt-app-viewer[\w-]*\.png/g, SITE_URL + cardPath);
+}
+
+// The site's own copy of index.html, if this build writes into a separate folder (the source copy is left alone)
+function updateHomePage(siteCard) {
+  const homePage = join(outputDir, 'index.html');
+  if (resolve(outputDir) === resolve(__dirname) || !existsSync(homePage)) return false;
+  writeFileSync(homePage, pointHomePageAtCard(readFileSync(homePage, 'utf8'), siteCard));
+  return true;
+}
+
+async function generateCards(apps, cards, profiles, authorCards, siteCard) {
+  const cardsDir = join(outputDir, 'cards');
+  rmSync(cardsDir, { recursive: true, force: true }); // Only the current cards are published
+  mkdirSync(cardsDir, { recursive: true });
+
+  let reused = 0;
+  const reuseOr = (cardPath, build) => () => {
+    const previous = reuseCardsDir ? join(reuseCardsDir, basename(cardPath)) : null;
+    if (previous && existsSync(previous)) {
+      copyFileSync(previous, join(outputDir, cardPath));
+      reused++;
+      return Promise.resolve();
+    }
+    return build(join(outputDir, cardPath));
+  };
+  const jobs = [
+    reuseOr(siteCard, out => buildSiteCard(apps.length, out, tileCandidates(apps))),
+    ...apps.map(app => reuseOr(cards.get(app.name), out => buildAppCard(app, cardScreenshot(app), out))),
+    ...profiles.map(profile => reuseOr(authorCards.get(profile.slug), out => buildAuthorCard(
+      profile.displayName,
+      profile.apps.length,
+      out,
+      tileCandidates(profile.apps),
+    ))),
+  ];
+  const worker = async () => {
+    for (let job = jobs.shift(); job; job = jobs.shift()) await job();
+  };
+  await Promise.all(Array.from({ length: CARD_CONCURRENCY }, worker));
+  return reused;
 }
 
 function parseManifest(appPath) {
@@ -112,29 +360,34 @@ function parseManifest(appPath) {
   return null;
 }
 
-function findPreview(files, appName, manifest, starFile) {
+// The preview screenshot, found the same way as Tronbyt Server so both show the same one: a file named after the
+// manifest's packageName, then the .star file, then "screenshot", preferring .webp, then .gif, then .png (so a
+// Pixlet render wins over an older photo with the same name). The folder name and any other image are fallbacks.
+const PREVIEW_EXTS = ['.webp', '.gif', '.png'];
+
+export function findPreview(files, appName, manifest, starFile) {
   const fileSet = new Set(files);
+  const starName = manifest?.fileName || starFile;
+  const bases = [manifest?.packageName || appName, starName && starName.replace(/\.star$/, ''), 'screenshot', appName];
 
-  const check = (base, stripExt = false) => {
-    if (!base) return null;
-    const baseName = stripExt ? base.replace(/\.[^/.]+$/, "") : base;
-    for (const ext of IMAGE_EXTS) {
-      const fileName = `${baseName}${ext}`;
-      if (fileSet.has(fileName)) {
-        return fileName;
-      }
+  for (const base of new Set(bases.filter(Boolean))) {
+    for (const ext of PREVIEW_EXTS) {
+      if (fileSet.has(`${base}${ext}`)) return `${base}${ext}`;
     }
-    return null;
-  };
-
-  return check(appName) ||
-    check(manifest?.fileName, true) ||
-    check(starFile, true) ||
-    files.find(f => IMAGE_EXTS.includes(extname(f).toLowerCase()));
+  }
+  return files.find(f => IMAGE_EXTS.includes(extname(f).toLowerCase())) || null;
 }
 
-function findMarkdown(files) {
-  return files.find(f => MD_FILES.includes(f));
+export function findMarkdown(files) {
+  const exactMatch = MD_FILES.find(candidate => files.includes(candidate));
+  if (exactMatch) return exactMatch;
+
+  for (const candidate of MD_FILES) {
+    const match = files.find(file => file.toLocaleLowerCase('en-US') === candidate.toLocaleLowerCase('en-US'));
+    if (match) return match;
+  }
+
+  return undefined;
 }
 
 function getReadmeDescription(appPath, mdFile) {
@@ -262,92 +515,82 @@ function scanApps() {
   return apps;
 }
 
-function generateHtmlFiles(apps) {
+// Detail and author pages are written one folder down (details/, authors/), so their relative links need "../".
+// Every link to the home page is adjusted: the header logo and the Back to Apps button both use it.
+export function adjustTemplateForNestedPage(template) {
+  return template
+    .replace('href="style.css"', 'href="../style.css"')
+    .replace('src="main.js"', 'src="../main.js"')
+    .replaceAll('href="index.html"', 'href="../index.html"');
+}
+
+function generateHtmlFiles(apps, cards) {
   const detailsDir = join(outputDir, 'details');
   if (!existsSync(detailsDir)) {
     mkdirSync(detailsDir, { recursive: true });
   }
 
   const templatePath = join(__dirname, 'app.html');
-  let template = readFileSync(templatePath, 'utf8');
-
-  // Adjust relative paths in template
-  template = template.replace('href="style.css"', 'href="../style.css"');
-  template = template.replace('src="main.js"', 'src="../main.js"');
-  template = template.replace('href="index.html"', 'href="../index.html"');
+  const template = adjustTemplateForNestedPage(readFileSync(templatePath, 'utf8'));
 
   for (const app of apps) {
-    const title = app.displayName ? `${app.displayName} - Tronbyt App` : 'Tronbyt App';
-    const description = app.summary || app.description || 'View details for this Tronbyt app.';
-    const imageUrl = app.image ? `https://tronbyt.github.io/apps/apps/${app.image}` : `https://avatars.githubusercontent.com/u/200508996?s=400&v=4`;
-    const url = `https://tronbyt.github.io/apps/details/${encodeURIComponent(app.name)}.html`;
-
-    const metaTags = `<title>${title}</title>
-        <meta name="description" content="${description.replace(/"/g, '&quot;').replace(/\n/g, ' ')}">
-        <meta property="og:title" content="${title.replace(/"/g, '&quot;')}">
-        <meta property="og:description" content="${description.replace(/"/g, '&quot;').replace(/\n/g, ' ')}">
-        <meta property="og:image" content="${imageUrl}">
-        <meta property="og:url" content="${url}">
-        <meta property="og:type" content="website">
-        <meta name="twitter:card" content="summary_large_image">
-        <meta name="twitter:title" content="${title.replace(/"/g, '&quot;')}">
-        <meta name="twitter:description" content="${description.replace(/"/g, '&quot;').replace(/\n/g, ' ')}">
-        <meta name="twitter:image" content="${imageUrl}">
-        <meta name="app-name" content="${app.name}">`;
-
-    const appHtml = template.replace('<title>App Details</title>', metaTags);
+    const appHtml = template
+      .replace('<title>App Details</title>', buildAppMetaTags(app, cards.get(app.name)))
+      .replace('<div id="app-content"></div>', `<div id="app-content">
+                ${buildAppPrerender(app)}
+            </div>`);
     writeFileSync(join(detailsDir, `${app.name}.html`), appHtml);
   }
 }
 
-function generateAuthorHtmlFiles(profiles) {
+function generateAuthorHtmlFiles(profiles, authorCards) {
   const authorsDir = join(outputDir, 'authors');
   if (!existsSync(authorsDir)) {
     mkdirSync(authorsDir, { recursive: true });
   }
 
   const templatePath = join(__dirname, 'author.html');
-  let template = readFileSync(templatePath, 'utf8');
-
-  template = template.replace('href="style.css"', 'href="../style.css"');
-  template = template.replace('src="main.js"', 'src="../main.js"');
-  template = template.replace('href="index.html"', 'href="../index.html"');
+  const template = adjustTemplateForNestedPage(readFileSync(templatePath, 'utf8'));
 
   for (const profile of profiles) {
-    const appCount = profile.apps.length;
-    const title = `${profile.displayName} - Tronbyt Apps`;
-    const description = `${appCount} Tronbyt ${appCount === 1 ? 'app' : 'apps'} by ${profile.displayName}.`;
-    const url = `https://tronbyt.github.io/apps/authors/${encodeURIComponent(profile.slug)}.html`;
-
-    const metaTags = `<title>${escapeHtmlAttribute(title)}</title>
-        <meta name="description" content="${escapeHtmlAttribute(description)}">
-        <meta property="og:title" content="${escapeHtmlAttribute(title)}">
-        <meta property="og:description" content="${escapeHtmlAttribute(description)}">
-        <meta property="og:url" content="${escapeHtmlAttribute(url)}">
-        <meta property="og:type" content="website">
-        <meta name="twitter:card" content="summary">
-        <meta name="twitter:title" content="${escapeHtmlAttribute(title)}">
-        <meta name="twitter:description" content="${escapeHtmlAttribute(description)}">
-        <meta name="author-slug" content="${escapeHtmlAttribute(profile.slug)}">
-        <meta name="author-name" content="${escapeHtmlAttribute(profile.displayName)}">`;
-
-    const authorHtml = template.replace('<title>Author Profile</title>', metaTags);
+    const authorHtml = template
+      .replace('<title>Author Profile</title>', buildAuthorMetaTags(profile, authorCards.get(profile.slug)))
+      .replace('<div id="author-content"></div>', `<div id="author-content">
+                ${buildAuthorPrerender(profile)}
+            </div>`);
     writeFileSync(join(authorsDir, `${profile.slug}.html`), authorHtml);
   }
 }
 
-function main() {
+async function main() {
   const apps = scanApps();
   const authorProfiles = buildAuthorProfiles(apps);
   writeFileSync(OUTPUT_FILE, JSON.stringify(apps, null, 2));
   console.log(`Generated ${OUTPUT_FILE} with ${apps.length} apps.`);
 
   // Generate static HTML pages with Open Graph tags
-  generateHtmlFiles(apps);
+  const cards = planCards(apps);
+  generateHtmlFiles(apps, cards);
   console.log(`Generated ${apps.length} static detail HTML pages with metadata.`);
 
-  generateAuthorHtmlFiles(authorProfiles);
+  const authorCards = planAuthorCards(authorProfiles);
+  generateAuthorHtmlFiles(authorProfiles, authorCards);
   console.log(`Generated ${authorProfiles.length} static author HTML pages with metadata.`);
+
+  writeFileSync(join(outputDir, 'sitemap.xml'), buildSitemap(apps, authorProfiles));
+  writeFileSync(join(outputDir, 'robots.txt'), buildRobotsTxt());
+  console.log('Generated sitemap.xml and robots.txt.');
+
+  const siteCard = planSiteCard(apps);
+  if (updateHomePage(siteCard)) console.log(`Pointed index.html at ${siteCard}.`);
+
+  if (withCards) {
+    const started = Date.now();
+    const reused = await generateCards(apps, cards, authorProfiles, authorCards, siteCard);
+    console.log(`Generated ${apps.length + authorProfiles.length + 1} social cards (${reused} reused) in ${Math.round((Date.now() - started) / 1000)}s.`);
+  }
 }
 
-main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  await main();
+}
