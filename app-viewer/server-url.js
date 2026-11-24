@@ -2,6 +2,7 @@ export const TRONBYT_SERVER_STORAGE_KEY = 'tronbyt.apps.verifiedServerUrl';
 export const APP_VIEWER_PROTOCOL = 1;
 export const CONNECTION_MAX_AGE_MS = 10 * 60 * 1000;
 export const CONNECTION_HELP_DELAY_MS = 20 * 1000;
+export const DEFAULT_SERVER_PORT = '8000';
 
 export function isLocalNetworkHostname(hostname) {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
@@ -36,10 +37,17 @@ export function normalizeServerUrl(value) {
     throw new Error('The server address must use http:// or https://.');
   }
 
-  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  // With no http:// or https:// typed, guess: a local-network address gets http and, if no port was given, Tronbyt
+  // Server's default port 8000 (as a plain local install runs); anything else gets https. What was typed in full is
+  // kept as it is, and the guessed address is shown in the box, so it can be corrected.
+  const typedScheme = /^https?:\/\//i.test(trimmed);
   let url;
   try {
-    url = new URL(candidate);
+    url = new URL(typedScheme ? trimmed : `https://${trimmed}`);
+    if (!typedScheme && isLocalNetworkHostname(url.hostname)) {
+      url = new URL(`http://${trimmed}`);
+      if (!url.port) url.port = DEFAULT_SERVER_PORT;
+    }
   } catch {
     throw new Error('Enter a valid server address.');
   }

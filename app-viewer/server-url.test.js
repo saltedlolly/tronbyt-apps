@@ -17,8 +17,22 @@ import {
 
 test('normalizes Tronbyt server addresses', () => {
   assert.equal(normalizeServerUrl('https://umbrel.local:19191/'), 'https://umbrel.local:19191');
-  assert.equal(normalizeServerUrl('umbrel.local:19191'), 'https://umbrel.local:19191');
   assert.equal(normalizeServerUrl('http://192.168.1.20:8000'), 'http://192.168.1.20:8000');
+});
+
+test('guesses http and the default port for a bare local address', () => {
+  assert.equal(normalizeServerUrl('192.168.1.20'), 'http://192.168.1.20:8000');
+  assert.equal(normalizeServerUrl('tronbyt.local'), 'http://tronbyt.local:8000');
+  assert.equal(normalizeServerUrl('localhost/auth/login'), 'http://localhost:8000');
+  assert.equal(normalizeServerUrl('umbrel.local:19191'), 'http://umbrel.local:19191');
+  // Typed in full: kept as it is
+  assert.equal(normalizeServerUrl('http://192.168.1.20'), 'http://192.168.1.20');
+  assert.equal(normalizeServerUrl('https://tronbyt.local'), 'https://tronbyt.local');
+  // Not local: https, no port added
+  assert.equal(normalizeServerUrl('tronbyt.example.com'), 'https://tronbyt.example.com');
+});
+
+test('keeps full addresses', () => {
   assert.equal(
     normalizeServerUrl('http://192.168.1.20:19192/auth/login'),
     'http://192.168.1.20:19192'
