@@ -3,6 +3,13 @@ export const APP_VIEWER_PROTOCOL = 1;
 export const CONNECTION_MAX_AGE_MS = 10 * 60 * 1000;
 export const CONNECTION_HELP_DELAY_MS = 20 * 1000;
 export const DEFAULT_SERVER_PORT = '8000';
+// The Tronbyt app for Umbrel home servers (saltedlolly-tronbyt) serves on this port at umbrel.local
+export const UMBREL_SERVER_PORT = '19191';
+
+function defaultPortFor(hostname) {
+  const name = hostname.toLowerCase();
+  return name === 'umbrel.local' || name === 'umbrel' ? UMBREL_SERVER_PORT : DEFAULT_SERVER_PORT;
+}
 
 export function isLocalNetworkHostname(hostname) {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
@@ -38,7 +45,8 @@ export function normalizeServerUrl(value) {
   }
 
   // With no http:// or https:// typed, guess: a local-network address gets http and, if no port was given, Tronbyt
-  // Server's default port 8000 (as a plain local install runs); anything else gets https. What was typed in full is
+  // Server's default port 8000 (as a plain local install runs), or 19191 for umbrel.local (the Umbrel app);
+  // anything else gets https. What was typed in full is
   // kept as it is, and the guessed address is shown in the box, so it can be corrected.
   const typedScheme = /^https?:\/\//i.test(trimmed);
   let url;
@@ -46,7 +54,7 @@ export function normalizeServerUrl(value) {
     url = new URL(typedScheme ? trimmed : `https://${trimmed}`);
     if (!typedScheme && isLocalNetworkHostname(url.hostname)) {
       url = new URL(`http://${trimmed}`);
-      if (!url.port) url.port = DEFAULT_SERVER_PORT;
+      if (!url.port) url.port = defaultPortFor(url.hostname);
     }
   } catch {
     throw new Error('Enter a valid server address.');

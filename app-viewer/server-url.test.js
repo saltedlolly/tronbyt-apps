@@ -25,6 +25,10 @@ test('guesses http and the default port for a bare local address', () => {
   assert.equal(normalizeServerUrl('tronbyt.local'), 'http://tronbyt.local:8000');
   assert.equal(normalizeServerUrl('localhost/auth/login'), 'http://localhost:8000');
   assert.equal(normalizeServerUrl('umbrel.local:19191'), 'http://umbrel.local:19191');
+  // The Umbrel app's port
+  assert.equal(normalizeServerUrl('umbrel.local'), 'http://umbrel.local:19191');
+  assert.equal(normalizeServerUrl('Umbrel.local/'), 'http://umbrel.local:19191');
+  assert.equal(normalizeServerUrl('umbrel.local:8000'), 'http://umbrel.local:8000');
   // Typed in full: kept as it is
   assert.equal(normalizeServerUrl('http://192.168.1.20'), 'http://192.168.1.20');
   assert.equal(normalizeServerUrl('https://tronbyt.local'), 'https://tronbyt.local');
