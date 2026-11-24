@@ -1236,6 +1236,21 @@ body.dot-matrix-enabled .app-readme img.readme-device-square {
 }
 
 /* --- Add to Tronbyt: server connection --- */
+.modal-content {
+  background: #222;
+  border: 2px solid #444;
+  color: #e0e0e0;
+}
+
+.modal-header,
+.modal-footer {
+  border-color: #444;
+}
+
+.modal .btn-close {
+  filter: invert(1);
+}
+
 .viewer-header.use-short-title .title-full {
   display: none;
 }
