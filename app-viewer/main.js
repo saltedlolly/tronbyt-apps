@@ -466,7 +466,32 @@ function setupTronbytServerSettings() {
     }
   }
 
+  // Opened to add an app (from an "Add to my Tronbyt" link, or Add to Tronbyt with no server saved yet): say so
+  const modalTitle = document.getElementById('tronbyt-server-modal-title');
+  const intro = modalElement.querySelector('.server-intro');
+  const verifyButton = form.querySelector('button[type="submit"]');
+  const help = modalElement.querySelector('.server-help');
+  const defaultText = {
+    title: modalTitle?.textContent,
+    intro: intro?.textContent,
+    verify: verifyButton?.textContent,
+    help: help?.textContent
+  };
+
+  function showAddingCopy(app) {
+    const name = app ? app.displayName || app.name : null;
+    if (modalTitle) modalTitle.textContent = name ? `Add ${name} to your Tronbyt` : defaultText.title;
+    if (intro) {
+      intro.textContent = name
+        ? `To install ${name}, first tell the App Viewer where your Tronbyt Server is. You only need to do this once in this browser.`
+        : defaultText.intro;
+    }
+    if (verifyButton) verifyButton.textContent = name ? 'Verify and continue' : defaultText.verify;
+    if (help) help.textContent = name ? defaultText.help.replace('select Verify.', 'select Verify and continue.') : defaultText.help;
+  }
+
   modalElement.addEventListener('show.bs.modal', () => {
+    showAddingCopy(pendingAddApp);
     error.textContent = '';
     error.className = '';
     resetConnectionProgress();
