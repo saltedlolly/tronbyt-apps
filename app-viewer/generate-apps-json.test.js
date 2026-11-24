@@ -7,6 +7,7 @@ import {
   buildAppMetaTags,
   buildAppPrerender,
   buildAuthorPrerender,
+  buildOpenPage,
   buildSitemap,
   escapeHtmlAttribute,
   buildRobotsTxt,
@@ -128,4 +129,19 @@ test('repoints a home page card tag from the old site address', () => {
   const html = '<meta property="og:image" content="https://tronbyt.github.io/apps/cards/tronbyt-app-viewer.png">';
   assert.equal(pointHomePageAtCard(html, 'cards/tronbyt-app-viewer-0123456789.png'),
     '<meta property="og:image" content="https://apps.tronbyt.com/cards/tronbyt-app-viewer-0123456789.png">');
+});
+
+test('open/<app> pages forward to a saved server, else to the details page, without trusting app text', () => {
+  const page = buildOpenPage({
+    name: 'clock',
+    displayName: '</script><script>alert(1)</script>',
+    summary: 'A clock',
+    updated: '2026-11-20T12:00:00Z',
+  });
+  assert.match(page, /<meta name="robots" content="noindex">/);
+  assert.match(page, /<link rel="canonical" href="https:\/\/apps\.tronbyt\.com\/details\/clock">/);
+  assert.match(page, /from '\.\.\/server-url\.js'/);
+  assert.match(page, /"\.\.\/details\/clock\?add=1"/);
+  assert.match(page, /\{"name":"clock","updated":"2026-11-20T12:00:00Z"\}/);
+  assert.ok(!page.includes('<script>alert(1)'));
 });

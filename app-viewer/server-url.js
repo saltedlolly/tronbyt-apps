@@ -62,13 +62,20 @@ export function normalizeServerUrl(value) {
   return url.origin;
 }
 
-export function buildCommunityInstallUrl(serverUrl, appSlug) {
+// The server's install page for an app. `updated` (the app's last update, from its manifest) lets the server say
+// when its own copy of the app store is older than the App Viewer's; it's only a hint, so a bad date is left out.
+export function buildCommunityInstallUrl(serverUrl, appSlug, updated = null) {
   if (!appSlug) {
     throw new Error('An app identifier is required.');
   }
 
   const baseUrl = normalizeServerUrl(serverUrl);
-  return new URL(`/install/community/${encodeURIComponent(appSlug)}`, baseUrl).href;
+  const installUrl = new URL(`/install/community/${encodeURIComponent(appSlug)}`, baseUrl);
+  const updatedMs = updated ? Date.parse(updated) : NaN;
+  if (Number.isFinite(updatedMs) && updatedMs > 0) {
+    installUrl.searchParams.set('updated', String(Math.floor(updatedMs / 1000)));
+  }
+  return installUrl.href;
 }
 
 export function buildServerConnectionUrl(serverUrl, state, protocol = APP_VIEWER_PROTOCOL) {

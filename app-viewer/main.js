@@ -27,6 +27,9 @@ const DEFAULT_SORT_ORDER = 'updated';
 const APP_BATCH_SIZE = 60;
 const SEARCH_DEBOUNCE_MS = 150;
 const PENDING_CONNECTION_STORAGE_KEY = 'tronbyt.apps.pendingConnection';
+// The app someone asked to add before a Tronbyt Server was verified; adding carries on once it is
+let pendingAddApp = null;
+let currentDetailApp = null;
 const VIEWER_STATE_PARAMS = ['q', 'category', 'display', 'sort', 'tag', 'hideBroken', 'count', 'scroll'];
 let appListObserver = null;
 
@@ -194,14 +197,39 @@ function clearPendingConnection() {
   localStorage.removeItem(PENDING_CONNECTION_STORAGE_KEY);
 }
 
-function openTronbytInstall(app) {
+function tronbytInstallUrl(app) {
   const serverUrl = getSavedTronbytServer();
-  if (!serverUrl) {
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('tronbyt-server-modal')).show();
+  return serverUrl ? buildCommunityInstallUrl(serverUrl, app.name, app.updated) : null;
+}
+
+// Without a verified server, ask for one first; adding carries on in this tab once it's verified
+function askForTronbytServer(app) {
+  pendingAddApp = app;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('tronbyt-server-modal')).show();
+}
+
+function openTronbytInstall(app) {
+  const installUrl = tronbytInstallUrl(app);
+  if (!installUrl) {
+    askForTronbytServer(app);
     return;
   }
 
-  window.open(buildCommunityInstallUrl(serverUrl, app.name), '_blank', 'noopener');
+  window.open(installUrl, '_blank', 'noopener');
+}
+
+// From an "Add to my Tronbyt" link (open/<app> sends people without a saved server here with ?add=1)
+function addToTronbytFromLink(app) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('add');
+  window.history.replaceState(window.history.state, '', url);
+
+  const installUrl = tronbytInstallUrl(app);
+  if (installUrl) {
+    window.location.replace(installUrl);
+  } else {
+    askForTronbytServer(app);
+  }
 }
 
 function setButtonContent(button, icon, label) {
@@ -258,7 +286,6 @@ function createAddToTronbytButton(app, isBroken) {
   button.type = 'button';
   button.className = 'btn btn-success add-to-tronbyt-button tronbyt-install-action';
   setButtonContent(button, '+', 'Add to Tronbyt');
-  button.hidden = !getSavedTronbytServer();
   button.disabled = isBroken;
   if (isBroken) {
     button.title = 'This app is currently marked as broken';
@@ -396,13 +423,6 @@ function setupTronbytServerSettings() {
     }, connectionHelpDelay(pending.createdAt));
   }
 
-  function refreshInstallActions() {
-    const connected = Boolean(getSavedTronbytServer());
-    document.querySelectorAll('.tronbyt-install-action').forEach(button => {
-      button.hidden = !connected;
-    });
-  }
-
   function refreshSettings() {
     const saved = getSavedTronbytServer();
     const remembered = getRememberedTronbytServer();
@@ -423,7 +443,6 @@ function setupTronbytServerSettings() {
       settingsButton?.setAttribute('title', 'Add Tronbyt Server');
       settingsButton?.classList.remove('connected');
     }
-    refreshInstallActions();
   }
 
   modalElement.addEventListener('show.bs.modal', () => {
@@ -484,6 +503,13 @@ function setupTronbytServerSettings() {
     resetConnectionProgress();
     refreshSettings();
     modal.hide();
+    const installUrl = pendingAddApp && tronbytInstallUrl(pendingAddApp);
+    pendingAddApp = null;
+    if (installUrl) window.location.assign(installUrl);
+  });
+
+  modalElement.addEventListener('hidden.bs.modal', () => {
+    if (!getPendingConnection()) pendingAddApp = null;
   });
 
   refreshSettings();
@@ -1110,6 +1136,7 @@ async function renderAppDetail() {
   // Get app data and check if app is broken
   const apps = await fetchAppsList();
   const app = apps.find(a => a.name === appName);
+  currentDetailApp = app || null;
 
   if (!app) {
     const notFoundAlert = document.createElement('div');
@@ -1780,9 +1807,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupDotMatrixToggle();
   } else if (document.getElementById('app-content')) {
     // App detail page
+    const addRequested = new URLSearchParams(window.location.search).get('add') === '1';
     tidyPageAddress();
     setupDotMatrixToggle();
     await renderAppDetail();
+    if (addRequested && currentDetailApp && !isAppBroken(currentDetailApp, appCache.brokenApps || [])) {
+      addToTronbytFromLink(currentDetailApp);
+    }
   }
   renderSiteFooter();
 });

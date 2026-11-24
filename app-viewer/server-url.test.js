@@ -71,6 +71,19 @@ test('builds an encoded community install URL', () => {
   );
 });
 
+test("adds the app's last update to the install URL as Unix seconds, if it's a real date", () => {
+  assert.equal(
+    buildCommunityInstallUrl('https://umbrel.local:19191', 'clock', '2026-11-20T12:00:00Z'),
+    'https://umbrel.local:19191/install/community/clock?updated=1795176000'
+  );
+  for (const updated of [null, '', 'soon', undefined]) {
+    assert.equal(
+      buildCommunityInstallUrl('https://umbrel.local:19191', 'clock', updated),
+      'https://umbrel.local:19191/install/community/clock'
+    );
+  }
+});
+
 test('builds a server connection URL with one-time state', () => {
   assert.equal(
     buildServerConnectionUrl('http://umbrel.local:19192', 'test-state'),
