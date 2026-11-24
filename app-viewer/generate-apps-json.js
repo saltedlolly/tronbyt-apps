@@ -155,46 +155,18 @@ export function appPageUrl(app) {
   return `${SITE_URL}details/${encodeURIComponent(app.name)}`;
 }
 
-// "Add to my Tronbyt" link for an app: apps.tronbyt.com/open/<app>. Anyone can share it. With a Tronbyt Server
-// already verified in this browser, it goes straight to that server's install page for the app (which only shows
-// the app and asks which device; nothing is installed until you choose). Otherwise it shows the app's details page
-// and asks for the server address. Social sites get the app's card; search engines are sent to the details page.
+// "Add to my Tronbyt" link for an app: apps.tronbyt.com/open/<app>. Anyone can share it. It is the app's details
+// page, marked so the page carries on to adding the app: straight to the visitor's own Tronbyt Server's install page
+// if one is verified in this browser (which only shows the app and asks which device), otherwise it asks for the
+// server address first. Search engines are pointed at the details page.
 export function openPageUrl(app) {
   return `${SITE_URL}open/${encodeURIComponent(app.name)}`;
 }
 
-export function buildOpenPage(app, cardPath = SITE_CARD) {
-  const name = app.displayName || app.name;
-  const title = `Add ${name} to your Tronbyt`;
-  const description = app.summary || app.description || 'A Tronbyt app.';
-  const detailsPath = `../details/${encodeURIComponent(app.name)}`;
-  return `<!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta name="robots" content="noindex">
-        ${socialTags({ title, description, url: appPageUrl(app), image: SITE_URL + cardPath, imageAlt: `${name} on a Tronbyt display` })}
-        <script type="module">
-            import { APP_VIEWER_PROTOCOL, TRONBYT_SERVER_STORAGE_KEY, buildCommunityInstallUrl, parseStoredConnection } from '../server-url.js';
-            const app = ${scriptJson({ name: app.name, updated: app.updated || null })};
-            let target = ${scriptJson(`${detailsPath}?add=1`)};
-            try {
-                const saved = parseStoredConnection(localStorage.getItem(TRONBYT_SERVER_STORAGE_KEY));
-                if (saved?.protocol === APP_VIEWER_PROTOCOL && saved.verifiedAt) {
-                    target = buildCommunityInstallUrl(saved.serverUrl, app.name, app.updated);
-                }
-            } catch {
-                // No saved server (or storage blocked): show the app's details page
-            }
-            window.location.replace(target);
-        </script>
-    </head>
-    <body>
-        <p><a href="${escapeHtmlAttribute(`${detailsPath}?add=1`)}">${escapeHtmlAttribute(title)}</a></p>
-    </body>
-</html>
-`;
+export function markAsOpenPage(detailsHtml) {
+  return detailsHtml.replace('</head>', `    <meta name="robots" content="noindex">
+        <meta name="tronbyt-open" content="add">
+    </head>`);
 }
 
 export function buildAppMetaTags(app, cardPath = SITE_CARD) {
@@ -587,7 +559,7 @@ function generateHtmlFiles(apps, cards) {
   const openDir = join(outputDir, 'open');
   mkdirSync(openDir, { recursive: true });
   for (const app of apps) {
-    writeFileSync(join(openDir, `${app.name}.html`), buildOpenPage(app, cards.get(app.name)));
+    writeFileSync(join(openDir, `${app.name}.html`), markAsOpenPage(readFileSync(join(detailsDir, `${app.name}.html`), 'utf8')));
   }
 }
 

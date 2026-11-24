@@ -7,7 +7,7 @@ import {
   buildAppMetaTags,
   buildAppPrerender,
   buildAuthorPrerender,
-  buildOpenPage,
+  markAsOpenPage,
   buildSitemap,
   escapeHtmlAttribute,
   buildRobotsTxt,
@@ -131,17 +131,9 @@ test('repoints a home page card tag from the old site address', () => {
     '<meta property="og:image" content="https://apps.tronbyt.com/cards/tronbyt-app-viewer-0123456789.png">');
 });
 
-test('open/<app> pages forward to a saved server, else to the details page, without trusting app text', () => {
-  const page = buildOpenPage({
-    name: 'clock',
-    displayName: '</script><script>alert(1)</script>',
-    summary: 'A clock',
-    updated: '2026-11-20T12:00:00Z',
-  });
+test('open/<app> pages are the details page, marked to carry on to adding the app and kept out of search', () => {
+  const page = markAsOpenPage('<html><head><title>Clock</title></head><body></body></html>');
   assert.match(page, /<meta name="robots" content="noindex">/);
-  assert.match(page, /<link rel="canonical" href="https:\/\/apps\.tronbyt\.com\/details\/clock">/);
-  assert.match(page, /from '\.\.\/server-url\.js'/);
-  assert.match(page, /"\.\.\/details\/clock\?add=1"/);
-  assert.match(page, /\{"name":"clock","updated":"2026-11-20T12:00:00Z"\}/);
-  assert.ok(!page.includes('<script>alert(1)'));
+  assert.match(page, /<meta name="tronbyt-open" content="add">\s*<\/head>/);
+  assert.match(page, /<title>Clock<\/title>/);
 });

@@ -1412,3 +1412,18 @@ body.dot-matrix-enabled .app-readme img.readme-device-square {
     display: none;
   }
 }
+
+.opening-on-tronbyt {
+  align-items: center;
+  background: #1d2b1d;
+  border: 2px solid #3c6e3c;
+  color: #cfe8cf;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.opening-on-tronbyt .btn-link {
+  color: #ffd866;
+}

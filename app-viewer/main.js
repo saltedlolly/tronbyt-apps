@@ -14,7 +14,7 @@ import { classifyReadmeImage, normalizeReadmeImageUrl } from './readme-images.js
 
 // --- CONFIG ---
 // Use GitHub Pages structure for both local and production
-const isDetailsPage = window.location.pathname.includes('/details/');
+const isDetailsPage = window.location.pathname.includes('/details/') || window.location.pathname.includes('/open/');
 const isAuthorPage = window.location.pathname.includes('/authors/');
 const isNestedPage = isDetailsPage || isAuthorPage;
 const BASE_PATH = isNestedPage ? '../' : '';
@@ -83,7 +83,7 @@ export function tidyPageAddress() {
   const url = new URL(window.location.href);
   const viewerState = currentViewerState().toString();
   VIEWER_STATE_PARAMS.forEach(name => url.searchParams.delete(name));
-  url.pathname = url.pathname.replace(/\.html$/, '');
+  url.pathname = url.pathname.replace(/\.html$/, '').replace(/\/open\/([^/]+)$/, '/details/$1');
   if (url.href !== window.location.href || viewerState !== (window.history.state?.viewerState || '')) {
     window.history.replaceState({ ...(window.history.state || {}), viewerState }, '', url);
   }
@@ -226,10 +226,31 @@ function addToTronbytFromLink(app) {
 
   const installUrl = tronbytInstallUrl(app);
   if (installUrl) {
-    window.location.replace(installUrl);
+    showOpeningOnTronbyt(app, installUrl);
   } else {
     askForTronbytServer(app);
   }
+}
+
+// Show the app's page for a moment, then carry on to the server (Back returns here)
+function showOpeningOnTronbyt(app, installUrl) {
+  const notice = document.createElement('div');
+  notice.className = 'alert alert-info opening-on-tronbyt';
+  notice.setAttribute('role', 'status');
+  const text = document.createElement('span');
+  text.textContent = `Opening ${app.displayName || app.name} on your Tronbyt (${new URL(installUrl).host})…`;
+  const stay = document.createElement('button');
+  stay.type = 'button';
+  stay.className = 'btn btn-link btn-sm';
+  stay.textContent = 'Stay here';
+  notice.append(text, stay);
+  document.getElementById('app-content')?.prepend(notice);
+
+  const timer = window.setTimeout(() => window.location.assign(installUrl), 1500);
+  stay.addEventListener('click', () => {
+    window.clearTimeout(timer);
+    notice.remove();
+  });
 }
 
 function setButtonContent(button, icon, label) {
@@ -1807,7 +1828,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupDotMatrixToggle();
   } else if (document.getElementById('app-content')) {
     // App detail page
-    const addRequested = new URLSearchParams(window.location.search).get('add') === '1';
+    const addRequested = new URLSearchParams(window.location.search).get('add') === '1' ||
+      Boolean(document.querySelector('meta[name="tronbyt-open"]'));
     tidyPageAddress();
     setupDotMatrixToggle();
     await renderAppDetail();
