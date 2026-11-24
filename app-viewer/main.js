@@ -436,7 +436,7 @@ function setupTronbytServerSettings() {
     resetConnectionProgress();
     const connectionUrl = buildServerConnectionUrl(pending.serverUrl, pending.state, pending.protocol);
     error.className = 'connection-status-pending';
-    error.textContent = 'Continue in the new tab. Sign in to Tronbyt if asked; and then return here when you are done.';
+    error.textContent = 'Continue in the new tab and sign in to Tronbyt if asked. Your server then comes straight back here.';
     continueLink.href = connectionUrl;
     continueLink.hidden = false;
 
@@ -445,6 +445,23 @@ function setupTronbytServerSettings() {
       troubleshootingTimer = null;
     }, connectionHelpDelay(pending.createdAt));
   }
+
+  // Coming back to this tab with no confirmation usually means the server didn't return here (for example, an older
+  // server that shows its home page after sign-in), so explain at once rather than after the delay. A short wait lets
+  // a confirmation that is just arriving close the dialog first.
+  // Listen for both: a new tab hides this one; a new window (or a phone switching apps) may only take the focus.
+  function explainIfStillWaiting() {
+    if (document.visibilityState !== 'visible' || continueLink.hidden) return;
+    window.setTimeout(() => {
+      if (!continueLink.hidden && getPendingConnection()) {
+        if (troubleshootingTimer) window.clearTimeout(troubleshootingTimer);
+        troubleshootingTimer = null;
+        troubleshooting.hidden = false;
+      }
+    }, 750);
+  }
+  document.addEventListener('visibilitychange', explainIfStillWaiting);
+  window.addEventListener('focus', explainIfStillWaiting);
 
   function refreshSettings() {
     const saved = getSavedTronbytServer();
