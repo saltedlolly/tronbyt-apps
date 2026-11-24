@@ -70,7 +70,7 @@ export function buildCommunityInstallUrl(serverUrl, appSlug, updated = null) {
   }
 
   const baseUrl = normalizeServerUrl(serverUrl);
-  const installUrl = new URL(`/install/community/${encodeURIComponent(appSlug)}`, baseUrl);
+  const installUrl = new URL(`/apps/${encodeURIComponent(appSlug)}/install`, baseUrl);
   const updatedMs = updated ? Date.parse(updated) : NaN;
   if (Number.isFinite(updatedMs) && updatedMs > 0) {
     installUrl.searchParams.set('updated', String(Math.floor(updatedMs / 1000)));
