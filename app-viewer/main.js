@@ -29,6 +29,8 @@ const SEARCH_DEBOUNCE_MS = 150;
 const PENDING_CONNECTION_STORAGE_KEY = 'tronbyt.apps.pendingConnection';
 // The app someone asked to add before a Tronbyt Server was verified; adding carries on once it is
 let pendingAddApp = null;
+// The one-off state of a Verify started in this tab: only that tab carries on to adding an app
+let ownConnectionState = null;
 let currentDetailApp = null;
 const VIEWER_STATE_PARAMS = ['q', 'category', 'display', 'sort', 'tag', 'hideBroken', 'count', 'scroll'];
 let appListObserver = null;
@@ -514,6 +516,7 @@ function setupTronbytServerSettings() {
       input.value = normalized;
       const connectionUrl = beginTronbytConnection(normalized);
       const pending = getPendingConnection();
+      ownConnectionState = pending?.state || null;
       showPendingConnection(pending);
       continueLink.href = connectionUrl;
     } catch (validationError) {
@@ -549,9 +552,16 @@ function setupTronbytServerSettings() {
     resetConnectionProgress();
     refreshSettings();
     modal.hide();
-    const installUrl = pendingAddApp && tronbytInstallUrl(pendingAddApp);
+    // Carry on to adding an app only in the tab that asked for it and started this Verify
+    const installUrl = pendingAddApp && ownConnectionState && tronbytInstallUrl(pendingAddApp);
     pendingAddApp = null;
+    ownConnectionState = null;
     if (installUrl) window.location.assign(installUrl);
+  });
+
+  // The header button only manages the server: it never carries on to adding an app
+  settingsButton?.addEventListener('click', () => {
+    pendingAddApp = null;
   });
 
   modalElement.addEventListener('hidden.bs.modal', () => {
