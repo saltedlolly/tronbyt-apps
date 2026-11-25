@@ -40,7 +40,8 @@ jobs:
       - name: Checkout app-viewer source
         uses: actions/checkout@v7
         with:
-          ref: app-viewer-source
+          # Demo of Add to Tronbyt (fork only): build the Viewer from the feature branch
+          ref: feature/add-to-tronbyt
           path: app-viewer-source
 
       - name: Setup Node.js
@@ -81,7 +82,7 @@ jobs:
           # These assets are introduced by the upcoming Viewer changes. Copy
           # them when present so this workflow works before and after those
           # changes merge to app-viewer-source.
-          for asset in readme-images.js dots@64x64.svg github-logo.svg; do
+          for asset in readme-images.js server-url.js dots@64x64.svg github-logo.svg; do
             if [ -f "app-viewer-source/app-viewer/${asset}" ]; then
               cp "app-viewer-source/app-viewer/${asset}" _site/
             fi
