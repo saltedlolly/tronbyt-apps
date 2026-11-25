@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Twitch - Tronbyt App</title>
+        <meta name="description" content="Display info from Twitch">
+        <link rel="canonical" href="https://apps.tronbyt.com/details/twitch">
+        <meta property="og:site_name" content="Tronbyt App Viewer">
+        <meta property="og:title" content="Twitch - Tronbyt App">
+        <meta property="og:description" content="Display info from Twitch">
+        <meta property="og:url" content="https://apps.tronbyt.com/details/twitch">
+        <meta property="og:type" content="website">
+        <meta property="og:image" content="https://apps.tronbyt.com/cards/twitch-46c3ca59af.png">
+        <meta property="og:image:type" content="image/png">
+        <meta property="og:image:width" content="1200">
+        <meta property="og:image:height" content="630">
+        <meta property="og:image:alt" content="Twitch on a Tronbyt display">
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:title" content="Twitch - Tronbyt App">
+        <meta name="twitter:description" content="Display info from Twitch">
+        <meta name="twitter:image" content="https://apps.tronbyt.com/cards/twitch-46c3ca59af.png">
+        <meta name="twitter:image:alt" content="Twitch on a Tronbyt display">
+        <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Twitch","description":"Display info for a Twitch username.","url":"https://apps.tronbyt.com/details/twitch","image":"https://apps.tronbyt.com/cards/twitch-46c3ca59af.png","applicationCategory":"Tronbyt app","applicationSubCategory":"gaming","operatingSystem":"Tronbyt","keywords":"twitch, real-time, media","author":{"@type":"Person","name":"Nick Penree"},"datePublished":"2022-08-04T16:50:44Z","dateModified":"2025-12-23T13:24:18Z"}</script>
+        <meta name="app-name" content="twitch">
+        <link rel="icon" type="image/png" href="https://avatars.githubusercontent.com/u/200508996?s=48&v=4">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link rel="stylesheet" href="../style.css">
+    </head>
+
+    <body>
+        <div class="container py-4">
+            <div class="viewer-header d-flex justify-content-between align-items-center mb-4">
+                <h1 class="main-title mb-0">
+                    <a href="../index.html" class="home-link" title="Tronbyt App Viewer home">
+                        <img src="https://avatars.githubusercontent.com/u/200508996?s=48&v=4" alt="">
+                        <span class="title-full">Tronbyt App Viewer</span>
+                        <span class="title-short">App Viewer</span>
+                    </a>
+                </h1>
+                <button type="button"
+                        class="btn btn-secondary server-settings-button"
+                        data-bs-toggle="modal"
+                        data-bs-target="#tronbyt-server-modal"
+                        title="Tronbyt Server settings">
+                    <span class="connection-icon" aria-hidden="true"></span>
+                    <span id="tronbyt-settings-label">Add Tronbyt Server</span>
+                </button>
+            </div>
+
+            <a href="../index.html" class="btn btn-secondary mb-3">← Back
+                to Apps</a>
+
+            <div class="mb-4">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="dot-matrix-toggle" checked>
+                    <label class="form-check-label" for="dot-matrix-toggle">
+                        Enable dot matrix overlay
+                    </label>
+                </div>
+            </div>
+
+            <div id="app-content">
+                <h1>Twitch</h1>
+                <p>Display info from Twitch</p>
+                <p>Display info for a Twitch username.</p>
+                <p>By <a href="../authors/nick-penree">Nick Penree</a></p>
+                <p>Tags: <a href="../index.html?tag=twitch">twitch</a>, <a href="../index.html?tag=real-time">real-time</a>, <a href="../index.html?tag=media">media</a></p>
+            </div>
+        </div>
+        <div class="modal fade" id="tronbyt-server-modal" tabindex="-1" aria-labelledby="tronbyt-server-modal-title" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <form id="tronbyt-server-form">
+                        <div class="modal-header">
+                            <h2 class="modal-title fs-5" id="tronbyt-server-modal-title">Tronbyt Server</h2>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="server-intro">Install apps directly to your Tronbyt devices.</p>
+                            <p class="server-requirement">Requires <a href="https://github.com/tronbyt/server/releases/" target="_blank" rel="noopener">Tronbyt Server v2.x.x</a> or later.</p>
+                            <label for="tronbyt-server-url" class="form-label">Server address</label>
+                            <input type="text"
+                                   inputmode="url"
+                                   class="form-control"
+                                   id="tronbyt-server-url"
+                                   autocomplete="url"
+                                   placeholder="e.g. 192.168.1.20:8000">
+                            <p class="server-help mt-3 mb-2">Enter your Tronbyt Server address above and select Verify. Your server opens in a new tab: sign in if asked, and it comes straight back to the App Viewer. For a local address without a port, the default port 8000 is used (19191 for umbrel.local). Local addresses only work on the same network as the server.</p>
+                            <div class="connection-primary-actions">
+                                <div>
+                                    <button type="button" class="btn btn-secondary" id="clear-tronbyt-server">Clear</button>
+                                    <a class="btn btn-secondary" id="open-tronbyt-server" target="_blank" rel="noopener" hidden>Open Server</a>
+                                </div>
+                                <button type="submit" class="btn btn-success">Verify</button>
+                            </div>
+                            <div id="tronbyt-server-error" role="alert" aria-live="polite"></div>
+                            <a id="continue-tronbyt-connection" class="btn btn-secondary btn-sm mt-3" target="_blank" rel="noopener" hidden>Continue to Tronbyt Server</a>
+                            <div id="connection-troubleshooting" class="connection-troubleshooting mt-3" hidden>
+                                <p>Your Tronbyt Server hasn’t come back to the App Viewer yet. If it showed its home page after you signed in, it needs updating to support Add to Tronbyt (v2.x.x or later). If you’re not its admin, ask them to update it.</p>
+                                <div class="connection-troubleshooting-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="cancel-tronbyt-connection">Cancel</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="retry-tronbyt-connection">Try Again</button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.5/dist/purify.min.js"></script>
+        <script type="module" src="../main.js"></script>
+    </body>
+
+</html>
