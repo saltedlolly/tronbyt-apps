@@ -282,7 +282,13 @@ function setupResponsiveViewerTitle() {
     const styles = window.getComputedStyle(header);
     const gap = parseFloat(styles.columnGap || styles.gap) || 0;
     const fullTitleWidth = titleMeasurer.getBoundingClientRect().width;
-    const serverButtonWidth = serverButton.getBoundingClientRect().width;
+    // The server button shrinks (a long address is cut short with "…"), so use its full width, but no more than
+    // 16rem: the full title is kept while the button still gets that much room.
+    const label = serverButton.querySelector('#tronbyt-settings-label');
+    const fullButtonWidth = serverButton.getBoundingClientRect().width +
+      (label ? label.scrollWidth - label.clientWidth : 0);
+    const rem = parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
+    const serverButtonWidth = Math.min(fullButtonWidth, 16 * rem);
     const needsShortTitle = fullTitleWidth + serverButtonWidth + gap > header.clientWidth;
     header.classList.toggle('use-short-title', needsShortTitle);
   };

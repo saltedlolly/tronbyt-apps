@@ -8,7 +8,9 @@ body {
 
 .main-title {
   color: #ffd700;
+  flex: 0 0 auto;
   text-shadow: 2px 2px 0 #000;
+  white-space: nowrap;
 }
 
 .title-short {
@@ -1275,8 +1277,16 @@ body.dot-matrix-enabled .app-readme img.readme-device-square {
   display: inline-flex;
   gap: 0.65rem;
   justify-content: center;
+  flex: 0 1 auto;
   max-width: 28rem;
+  min-width: 0;
   white-space: nowrap;
+}
+/* A long server address is cut short with "…" rather than running out of the button; the button's tooltip has it in full */
+#tronbyt-settings-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .connection-icon {
   display: inline-block;
